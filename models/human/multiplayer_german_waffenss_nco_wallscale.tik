@@ -1,0 +1,150 @@
+/**
+Multiplayer Bot TIKI for MoH:AA
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+TIKI
+setup
+{
+	scale 0.52					// Set default scale to 16/30.5 since world is in 16 units per foot and model is in cm's
+
+	path models/human/german_waffenss_nco	// Set path to set skelmodel from
+	skelmodel ssnco.skd		// Set body model
+
+	surface top shader shutzshirt_nco
+	surface pants shader shutzpants_nco
+	surface culltop shader cull_shutzshirt_nco
+
+	$include models/human/heads/german_old_heads.tik
+
+	path models/human/hands
+	skelmodel hand.skd
+	surface hand shader handsnew
+
+	path models/equipment/germangear
+
+	//*** p-38 pistol
+	case weapon "Walter P38"
+	{
+		path models/gear/g_headgear
+
+		skelmodel ssncocap.skd
+		surface ssncocap shader ssncohat
+
+		path models/gear/ss
+
+		skelmodel ssholster.skd
+		surface ssholster shader german_holster
+
+		skelmodel ssloadout.skd
+		surface ssloadout shader german_gear
+	}
+
+	//*** regular KAR 98
+	case weapon "Mauser KAR 98K"
+	{
+		path models/gear/g_headgear
+
+		skelmodel ssncocap.skd
+		surface ssncocap shader ssncohat
+
+		path models/gear/ss
+
+		skelmodel sskarclips.skd
+		surface sskarclips shader german_riflebelt
+
+		skelmodel ssloadout.skd
+		surface ssloadout shader german_gear
+	}
+	
+	//*** MP40 submachinegun
+	case weapon "MP40"
+	{
+		path models/gear/g_headgear
+
+		skelmodel ssncocap.skd
+		surface ssncocap shader ssncohat
+
+		path models/gear/ss
+
+		skelmodel ssloadout.skd
+		surface ssloadout shader german_gear
+
+		skelmodel ssmp40clips.skd
+		surface ssmp40clips shader ammo_pouch
+	}
+	
+	//*** mp44 / stg44 machinegun
+	case weapon "StG44"
+	{
+		path models/gear/g_headgear
+
+		skelmodel ssncocap.skd
+		surface ssncocap shader ssncohat
+
+		path models/gear/ss
+
+		skelmodel ssmp44clips.skd
+		surface ssmp44clips shader german_holster
+
+		skelmodel ssloadout.skd
+		surface ssloadout shader mp44ammopouch
+	}
+	radius 20					// Defines size of shadow
+}
+
+init
+{
+	server
+	{
+     	classname Actor
+    	german
+		setsize "-16 -16 0" "16 16 92"
+		health 100
+		weapon "MP40"
+
+		// Make him mumble but not breathe steam
+		//exec global/breathe.scr 0 1
+
+		sethelmet "models/gear/german_ssnco.tik" 200 4 "ssncocap"
+	}
+}
+
+// wallscale animation
+animations
+{
+	$path models/human/animation
+	wallscale				scripted/wallclimb/wallscale.skc
+}
+
+$include models/human/animation/dialogue/generic_dialogue_german.tik
+$include models/human/multiplayer_generic_human.tik
+//$include models/human/animation/helmet_flyoff/helmet_flyoff_german_ssnco.tik
+
+/*QUAKED ai_multiplayer_german_waffenss_nco-wallscale (1.0 0.5 0.0) (-16 -16 0) (16 16 92)
+*/

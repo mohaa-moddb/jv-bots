@@ -1,0 +1,89 @@
+/**
+Multiplayer Bot TIKI for MoH:AA
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+TIKI
+setup
+{
+	scale 0.52
+	path models/human/allied_ranger_soldier	// Set path to set skelmodel from
+	skelmodel assaultvest.skd		// Set body model
+
+	surface ranger_pants shader ranger_pants
+	surface ranger_top shader ranger_top
+	surface armband shader av_ltnt_cap
+
+	$include models/human/heads/us_old_heads.tik
+
+	path models/human/hands
+	skelmodel hand.skd
+	surface hand shader handsnew
+	
+	path models/equipment/USGear/helmets
+
+	skelmodel us_helmet.skd
+	surface us_helmet shader us-helmet_captain
+	
+	path models/equipment/usgear
+
+	case weapon "thompson"
+	{
+		path models/gear/us
+	
+		skelmodel rangertommybelt.skd
+		surface tommybelt shader tommybelt
+	}
+
+	scale 0.52				// Set default scale to 16/30.5 since world is in 16 units per foot and model is in cm's
+	path models/human/protoanimations	// Set path to set animations from
+
+	radius 20				// defines size of shadow
+}
+
+init
+{
+	server
+	{
+      	classname Actor
+   	   	american
+		setsize "-16 -16 0" "16 16 92"
+		health 100
+		weapon "Thompson"
+
+		// Make him capable of breathing steam
+		exec global/breathe.scr 0 0
+		sethelmet "models/equipment/usgear/helmet_ranger_private.tik" 150 0.1 "us_helmet" 
+	}
+}
+
+$include models/human/multiplayer_generic_human.tik
+$include models/human/animation/dialogue/generic_dialogue_US.tik
+
+/*QUAKED ai_multiplayer_allied_2nd-ranger_captain (1.0 0.5 0.0) (-16 -16 0) (16 16 96)
+*/

@@ -1,0 +1,177 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.0
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Ladder Climbing II
+Requires additional $laddergodown node
+$laddertop node has to be placed lower
+Can only be used on routes.
+---------------------------------------------
+*/
+
+/**
+Climbs the ladder with #set local.set
+
+int set: #set value of #actionset and corresponding ladder.
+*/
+main local.set:
+	local.bottomnode = waitthread level.jvbot_main_script::get_from_set ladderbottom local.set
+	local.topnode = waitthread level.jvbot_main_script::get_from_set laddertop local.set
+	
+	if(vector_closer local.bottomnode.origin local.topnode.origin self.origin)
+		local.dir = up
+	else
+	{
+		local.dir = down
+		local.stepupnode = waitthread level.jvbot_main_script::get_from_set laddergodown local.set
+		if(local.stepupnode == NULL)
+			local.stepupnode = local.topnode
+	}
+	if(local.topnode.bot != NIL && isAlive local.topnode.bot && local.topnode.bot.dmteam != self.dmteam)
+	{
+		if(self.enemy == NULL)
+			self aimat local.topnode.bot
+		self favoriteenemy local.topnode.bot
+	}
+	
+	while (isAlive self && !(local.topnode.activedir == NIL || local.topnode.activedir == NULL || local.topnode.activedir == local.dir))
+		waitframe
+	
+	if(isAlive self)
+	{
+		self aimat NULL
+		self.enableEnemy = 0
+		
+		local.topnode.activedir = local.dir
+		local.topnode.bot = self
+		self waitthread ladder_climb local.dir local.bottomnode local.topnode local.stepupnode
+		local.topnode.activedir = NULL
+		local.topnode.bot = NULL
+		
+		if(isAlive self)
+			self.enableEnemy = 1
+	}
+end
+
+/**
+Climbs the ladder in the given direction using the given nodes.
+Startnode needs to have the correct angles.
+
+string dir:			'up' for climbing upwards, 'down' for sliding down.
+entity bottomnode:	script_origin marking the bottom of the ladder.
+entity topnode:		script_origin marking the top of the ladder.
+*/
+ladder_climb local.dir local.bottomnode local.topnode local.stepupnode:
+	if(local.dir == up)
+	{
+		local.startnode = local.bottomnode
+		local.endnode = local.topnode
+		local.dirnum = 1
+		local.run = local.startnode
+	}
+	else
+	{
+		local.startnode = local.topnode
+		local.endnode = local.bottomnode
+		local.dirnum = -1
+		local.run =  local.stepupnode
+	}
+	self runto local.run
+	self waittill movedone
+	self runto NULL
+	
+	if !(isAlive self)
+		end
+		
+	local.temp = spawn script_origin origin (local.startnode.origin + local.startnode.forwardvector * 256)
+
+	self turnto local.temp
+	self waittill turndone
+	local.temp remove
+	self holster
+	self anim_noclip ("ladder_" + local.dir + "_geton")
+	self waittill animdone
+	
+	thread staticxy local.startnode.origin[0] local.startnode.origin[1]
+	local.origin_thread = parm.previousthread
+	
+	thread angles local.startnode.angles local.startnode.origin
+	local.angles_thread = parm.previousthread
+
+	while(isAlive self && vector_closer self.origin local.endnode.origin local.startnode.origin)
+	{
+		if(local.hand == left)
+			local.hand = right
+		else
+			local.hand = left
+		local.start = level.time	
+		self anim_noclip ("ladder_" + local.dir + "_" + local.hand + "hand")
+		wait 0.15
+	}
+	if !(isAlive self)
+	{
+		self.origin = self.origin - self.forwardvector * 32 // fall backwards down the ladder
+		end
+	}
+	else
+	{
+		local.angles_thread.terminate = 1
+		local.origin_thread.terminate = 1
+	}
+	self anim_noclip ("ladder_" + local.dir + "_getoff")
+	self waittill animdone
+	if !(isAlive self)
+	{
+		self.origin = self.origin - self.forwardvector * 32 // fall backwards down the ladder
+		end
+	}
+	self unholster
+end
+
+angles local.angles:
+	while(isAlive self && local.terminate != 1)
+	{
+		self.angles = local.angles
+		waitframe
+	}
+end
+
+staticxy local.x local.y:
+	while(isAlive self && local.terminate != 1)
+	{
+		// correct attachment
+		local.tmp_origin = self.origin
+		local.tmp_origin[0] = local.x
+		local.tmp_origin[1] = local.y
+		self.origin = local.tmp_origin
+		wait 0.5
+	}
+end

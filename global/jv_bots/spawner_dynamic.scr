@@ -1,0 +1,198 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Spawner Script
+
+Adds bot to the game
+One bots is automatically removed
+each time a player joins
+---------------------------------------------
+*/
+
+setup:
+	// protection
+	waitthread safeend level.jvbot_spawner_dynamic
+	
+	level.jvbot_spawner_dynamic = group
+	thread spawner
+end
+
+shutdown:
+	waitthread safeend level.jvbot_spawner_dynamic
+end
+
+spawner:
+	local.forceadd = waitthread level.jvbot_main_script::getrankedvar 0 level.jvbot_forceaddbots "jvbot_forceaddbots" int 1 1
+	if(local.forceadd == 0)
+	{
+		// waittill there is at least one "teamed" player, so that the round doesn't end when the server is empty
+		println "INFO[spawner_dynamic::spawner]: Waiting for players..."
+		local.alliedplayers = waitthread global/jv_mp_players.scr::get_team_players $player allies
+		local.axisplayers = waitthread global/jv_mp_players.scr::get_team_players $player axis
+		while(group.terminate != 1 && local.alliedplayers.size <= 0 && local.axisplayers.size <= 0)
+		{
+			wait 0.5
+			local.alliedplayers = waitthread global/jv_mp_players.scr::get_team_players $player allies
+			local.axisplayers = waitthread global/jv_mp_players.scr::get_team_players $player axis
+		}
+	}
+
+	while(group.terminate != 1 && level.jvbot_jv_mp_ai_running == 1)
+	{
+		if(level.jvbot_g_allowspawn != 0)
+		{		
+			local.maxallies = waitthread level.jvbot_main_script::getrankedvar 0 level.alliesbots jvbot_forcenumalliesbots int 1 1
+			local.maxaxis = waitthread level.jvbot_main_script::getrankedvar 0 level.axisbots jvbot_forcenumaxisbots int 1 1
+			
+			local.members = waitthread level.jvbot_modscript[spawnhandler]::getteammembers NIL NIL 1
+			local.allies = local.members[1]
+			local.axis = local.members[2]
+			
+			if(local.maxallies != local.lastallies)
+			{
+				local.numfree = (local.maxallies - local.allies)
+				if(local.numfree < 0)
+					local.numfree = 0
+				println "INFO[spawner_dynamic::spawner]: Number of Allied dynamic slots now is " local.maxallies " (" local.numfree " free)."
+			}
+			
+			if(local.maxaxis != local.lastaxis)
+			{
+				local.numfree = (local.maxaxis - local.axis)
+				if(local.numfree < 0)
+					local.numfree = 0
+				println "INFO[spawner_dynamic::spawner]: Number of Axis dynamic slots now is " local.maxaxis " (" local.numfree " free)."
+			}
+			
+			local.lastallies = local.maxallies
+			local.lastaxis = local.maxaxis
+			local.alliesdone = 0	
+			if(local.allies < local.maxallies)
+			{
+				local.name = waitthread level.jvbot_modscript[libnames]::getname
+				local.newbotnum = waitthread level.jvbot_modscript[spawnhandler]::addbot local.name allies dynamic
+				group.alliesnums = waitthread addtoarray group.alliesnums local.newbotnum
+				waitthread waittillingame local.newbotnum
+			}
+			else if(local.allies > local.maxallies)
+			{
+				// remove an allied bot if possible
+				if(group.alliesnums.size > 0)	
+				{
+					local.losernum = waitthread kickbot group.alliesnums
+					group.alliesnums = waitthread removeindexfromarray group.alliesnums local.losernum
+				}
+			}
+			else
+				local.alliesdone = 1
+				
+			// Same for axis
+			local.axisdone = 0
+			if(local.axis < local.maxaxis)
+			{
+				// spawn a new bot for the axis team
+				local.name = waitthread level.jvbot_modscript[libnames]::getname
+				local.newbotnum = waitthread level.jvbot_modscript[spawnhandler]::addbot local.name axis dynamic
+				group.axisnums = waitthread addtoarray group.axisnums local.newbotnum
+				waitthread waittillingame local.newbotnum
+			}
+			else if(local.axis > local.maxaxis)
+			{
+				// remove an allied bot if possible
+				if(group.axisnums.size > 0)	
+				{
+					local.losernum = waitthread kickbot group.axisnums
+					group.axisnums = waitthread removeindexfromarray group.axisnums local.losernum
+				}
+			}
+			else
+				local.axisdone = 1
+				
+			if(local.alliesdone && local.axisdone)
+				wait 1 // relax :D
+		}
+		else
+			wait 1
+		waitframe
+	}
+	if(level.jvbot_verbose)
+		println "INFO[spawner_dynamic::spawner]: Spawner terminated."
+end
+
+waittillingame local.id:
+	while(level.jvbot_jv_mp_ai_running == 1 && level.botenabled[local.id] == 1 && (level.botstate[local.id] == prepare || level.botstate[local.id] == entering))
+		waitframe
+end
+
+kickbot local.nums:
+	local.num = randomint local.nums.size + 1
+	local.id = local.nums[local.num]
+	waitthread level.jvbot_modscript[spawnhandler]::kickbot local.id
+end local.num
+
+teamswitch local.nums local.team:
+	// switch bot from number array to given team
+	local.num = randomint local.nums.size + 1
+	local.id = local.nums[local.num]
+	waitthread level.jvbot_modscript[spawnhandler]::switchbot local.id local.team
+end local.num
+
+addtoarray local.array local.value:
+	if(local.array.size >= 0)
+		local.i = local.array.size + 1
+	else
+		local.i = 1
+		
+	local.array[local.i] = local.value
+end local.array
+
+removeindexfromarray local.array local.index:
+	local.j = 1
+	for(local.i = 1; local.i <= local.array.size; local.i++)
+	{
+		if(local.i != local.index)
+		{
+			local.out[local.j] = local.array[local.i]	
+			local.j++
+		}
+	}
+end local.out
+
+safeend local.thread:
+	// terminates the thread
+	if(local.thread != NIL && local.thread != NULL)
+	{
+		local.thread.terminate = 1
+		while(local.thread)
+			waitframe
+	}
+end

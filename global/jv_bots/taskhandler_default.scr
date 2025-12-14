@@ -1,0 +1,301 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Main Task Handler
+
+Assigns tasks to bots.
+---------------------------------------------
+*/
+
+setup:
+	if(level.jvbot_dontforceobjectives == 1)
+		thread assign
+	else
+		thread assignspecial
+end
+
+assign:
+	// this is the main handler, only one should be running
+	while(level.jvbot_handler_kill != 1)
+	{
+		for(local.i = 1; local.i <= level.botlastid; local.i++)
+		{
+			local.bot = level.actualbots[local.i]
+			if(isAlive local.bot)
+			{
+				if(local.bot.notask != 1)
+				{
+					local.input = local.bot waitthread level.jvbot_main_script::botgetnewtask
+					local.bot waitthread level.jvbot_main_script::botsetnewtask local.input
+					if(level.jvbot_loopdelay > 0)
+						waitframe
+				}
+				local.bot.handled = 1
+			}
+		}
+		waitframe
+		wait level.jvbot_loopdelay
+	}
+	level.jvbot_handler_kill = 0
+end
+
+
+assignspecial:
+	group.inversebomborder[allies] = randomint 2
+	group.inversebomborder[axis] = randomint 2
+	while(level.jvbot_handler_kill != 1)
+	{			
+		// assign tasks to allied bots
+		local.alliesbots = waitthread getactivebots allies
+		for(local.i = 1; local.i <= local.alliesbots.size; local.i++)
+			local.alliesbots[local.i].handled = 1
+		waitthread assigntasks local.alliesbots allies
+		
+		// add a waitframe here for de-syncing
+		waitframe
+		
+		// assign tasks to axis bots
+		local.axisbots = waitthread getactivebots axis
+		for(local.i = 1; local.i <= local.axisbots.size; local.i++)
+			local.axisbots[local.i].handled = 1
+		waitthread assigntasks local.axisbots axis
+		
+		wait level.jvbot_loopdelay
+		waitframe
+	}
+	level.jvbot_handler_kill = 0
+end
+
+assigntasks local.bots local.team:
+	// get general game info
+	group.attackbombs[local.team] = waitthread getbombs local.team attack
+
+	// hierarchical assignment structure
+	
+	// first assign one planting bot to each bomb, unless one of our own bombs is set
+	if(local.team == allies)
+		local.otherteam = axis
+	else
+		local.otherteam = allies
+
+	if(level.team_bombs_planted[local.otherteam] == NIL || level.team_bombs_planted[local.otherteam] <= 0)
+	{
+		for(local.i = 1; local.i <= group.attackbombs[local.team].size; local.i++)
+		{
+			local.bomb = group.attackbombs[local.team][local.i]
+			if(local.bomb.current_attacker == NULL || (local.bomb.current_attacker != NIL && local.bomb.current_attacker.task != attackbomb))
+				local.bomb.current_attacker = NIL
+			local.bot = waitthread getnearest local.bomb.node local.bots local.bomb.current_attacker
+			if(local.bot != NIL)
+			{
+				local.bot.parm[1] = local.bomb.node
+				local.bot.task = attackbomb
+				local.bomb.current_attacker = local.bot
+				// clean up the array
+				local.bots = waitthread removefromarray local.bots local.bot
+				waitframe // desync
+			}
+			else
+			{
+				break // no bots left
+			}
+		}
+	}
+	// assign defending bots
+	group.defendbombs[local.team] = waitthread getbombs local.team defend
+	for(local.i = 1; local.i <= group.defendbombs[local.team].size; local.i++)
+	{
+		local.bomb = group.defendbombs[local.team][local.i]
+		if(local.bomb.current_defender == NULL || (local.bomb.current_defender != NIL && local.bomb.current_defender.task != defendbomb))
+			local.bomb.current_defender = NIL		
+		local.bot = waitthread getnearest local.bomb.node local.bots local.bomb.current_defender
+		if(local.bot != NIL)
+		{
+			local.bot.parm[1] = local.bomb.node
+			local.bot.task = defendbomb
+			local.bomb.current_defender = local.bot
+			// clean up the array
+			local.bots = waitthread removefromarray local.bots local.bot
+			waitframe // desync
+		}
+		else 
+		{
+			break // no bots left
+		}
+	}
+	// other tasks according to botgetnewtask function
+	for(local.i = 1; local.i <= local.bots.size; local.i++)
+	{
+		waitframe // desync
+		local.bot = local.bots[local.i]
+		if(local.bot.notask != 1)
+		{
+			local.input = local.bot waitthread level.jvbot_main_script::botgetnewtask
+			local.bot waitthread level.jvbot_main_script::botsetnewtask local.input
+		}
+	}
+end
+
+getnearest local.center local.array local.biasent:
+	local.highest = 0
+	if(local.biasent != NIL)
+	{
+		if(isAlive local.biasent)	
+		{
+			local.distance = vector_length (local.biasent.origin - local.center.origin)
+			local.inv_distance = 1.0 / local.distance
+			// bias value
+			local.highest = local.inv_distance * 20.0
+			local.nearest = local.biasent
+		}
+	}
+	for(local.i = 1; local.i <= local.array.size; local.i++)
+	{
+		local.element = local.array[local.i]
+		local.distance = vector_length (local.element.origin - local.center.origin)
+		local.inv_distance = 1.0 / local.distance
+		if(local.inv_distance > local.highest)
+		{
+			local.highest = local.inv_distance
+			local.nearest = local.element	
+		}
+	}
+end local.nearest
+
+removefromarray local.array local.remove:
+	local.j = 0
+	for(local.i = 1; local.i <= local.array.size; local.i++)
+	{
+		local.element = local.array[local.i]
+		if(local.element != local.remove)
+		{
+			local.j++
+			local.outarray[local.j] = local.element	
+		}	
+	}
+end local.outarray
+
+getbombs local.team local.type:
+	local.j = 0
+	for(local.i = 1; local.i <= $bombnode.size; local.i++)
+	{
+		local.node = $bombnode[local.i]
+		local.bomb = local.node.target
+		local.bomb.node = local.node
+		if(local.bomb.exploded != 1)
+		{
+			if(local.type == attack)
+			{
+				if(local.bomb.plantteam == local.team)
+				{
+					local.j++
+					local.bombs[local.j] = local.bomb
+				}
+			}
+			else
+			{
+				if(local.bomb.defuseteam == local.team)
+				{
+					local.j++
+					local.bombs[local.j] = local.bomb
+				}
+			}
+		}
+	}
+	// clean up the array
+	local.l = 0
+	for(local.i = 1; local.i <= local.j; local.i++)
+	{
+		local.bomb = local.bombs[local.i]
+		// check if this bomb equals any of the bombs added before
+		local.ignore = 0
+		for(local.k = 1; local.k < local.i; local.k++)
+		{
+			local.otherbomb = local.bombs[local.k]
+			if(local.bomb == local.otherbomb)
+			{
+				// ignore this bomb
+				local.ignore = 1
+				break
+			}
+		}
+		if(local.ignore == 0)
+		{
+			local.l++
+			local.cleanbombs[local.l] = local.bomb
+		}
+	}
+	// inverse bombs if necessary to create unpredictable behaviour
+	if(group.inversebomborder[local.team])
+	{
+		local.m = 0
+		for(local.i = local.cleanbombs.size; local.i >= 1; local.i--)
+		{
+			local.m++
+			local.finalbombs[local.m] = local.cleanbombs[local.i]
+		}
+		local.cleanbombs = local.finalbombs
+	}
+end local.cleanbombs
+
+getnodes local.tg local.team:
+	local.j = 0
+	for(local.i = 1; local.i <= $(local.tg).size; local.i++)
+	{
+		local.node = $(local.tg)[local.i]
+		if !(local.node.noallies == 1 && local.team == allies)
+		{
+			if !(local.node.noaxis == 1 && local.team == axis)
+			{
+				local.j++
+				local.nodes[local.j] = local.node
+			}	
+		}
+	}
+end local.nodes
+
+getactivebots local.team:
+	local.j = 0
+	for(local.i = 1; local.i <= level.botlastid; local.i++)
+	{
+		local.bot = level.actualbots[local.i]
+		if(isAlive local.bot && local.bot.dmteam == local.team)
+		{
+			local.j++
+			local.bots[local.j] = local.bot
+		}
+	}
+end local.bots
+
+shutdown:
+	level.jvbot_handler_kill = 1
+end

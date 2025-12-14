@@ -1,0 +1,263 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Defend and Defuse Behaviour.
+---------------------------------------------
+*/
+
+/**
+General setup
+*/
+setup:
+	waitthread level.jvbot_modscript[libbomb]::presetup
+end
+
+/**
+Priority factors:
+	-distance
+	-urgency
+	-bomb #weight
+This task can be performed in-combat.
+*/
+getpriority:
+	local.bestscore = 0
+	local.bestnode = NULL
+
+	if(self.enemy)
+		local.hasenemy = 1
+	else
+		local.hasenemy = 0
+		
+	for(local.i = 1; local.i <= $bombnode.size; local.i++)
+	{
+		local.node = $bombnode[local.i]
+		local.score = waitthread evaluate (local.node::local.hasenemy)
+		if(local.score > local.bestscore)
+		{
+			local.bestnode = local.node
+			local.bestscore = local.score	
+		}
+	}
+	local.output = local.bestscore::local.bestnode::local.hasenemy
+end local.output
+
+evaluate local.parm local.onlyeval:
+	local.node = local.parm[1]
+	if(local.node == NIL)
+		end 0
+	local.hasenemy = local.parm[2]
+	if(local.hasenemy == NIL)
+		end 0 
+	local.bomb = local.node.target
+	local.score = 0
+	if(local.bomb.defuseteam == self.dmteam && local.bomb.exploded != 1)
+	{
+		local.campers = local.bomb.bots[self.dmteam]
+		if(local.campers < 0)
+			local.campers = 0
+			
+		local.distance = vector_length (self.origin - local.node.origin)
+		local.campweight = 3.0 / (local.campers + 3)
+		
+		local.stateweight = 1 - 0.5 * local.hasenemy
+
+		if(local.bomb.ticking == 1)
+			local.weight = 12
+		else if(local.bomb.beingset == 1)
+			local.weight = 6
+		else
+			local.weight = 1
+		
+		local.score = 0.1 * (1024 / (local.distance + 1024)) + local.campweight * local.stateweight * local.bomb.weight * local.weight
+	}
+end local.score
+
+action:
+	local.bombnode = self.parm[1]
+	local.bomb = local.bombnode.target
+	local.team = self.dmteam
+	//local.arrayid = local.bomb.rawbots[local.team].size + 1
+	//if(local.arrayid < 1)
+	//	local.arrayid = 1
+	//local.bomb.rawbots[local.team][local.arrayid] = self
+	local.voids = 0
+	while(isAlive self && self.task == "defendbomb" && self.parm[1] == local.bombnode)
+	{
+		switch(self.subtask)
+		{
+			defuse:
+				local.voids = 0
+				self thread level.jvbot_modscript[debug]::debugmodifylight 128 blue
+				self thread level.jvbot_modscript[debug]::debugmodifylight 128 red
+				self waitthread defuse local.bombnode
+				if(isAlive self)
+				{
+					self thread level.jvbot_modscript[debug]::debugmodifylight -128 red
+					self thread level.jvbot_modscript[debug]::debugmodifylight -128 blue
+				}
+				break
+			ignoredefuse:
+				local.voids = 0
+				self thread level.jvbot_modscript[debug]::debugmodifylight 128 blue
+				self.enableEnemy = 0
+				self waitthread defuse local.bombnode
+				if(isAlive self)
+				{
+					self.enableEnemy = 1
+					self thread level.jvbot_modscript[debug]::debugmodifylight -128 blue
+				}
+				break
+			escort:
+				local.voids = 0
+				self thread level.jvbot_modscript[debug]::debugmodifylight 128 green
+				self thread level.jvbot_modscript[debug]::debugmodifylight 128 blue
+				self waitthread level.jvbot_modscript[libbomb]::escort local.bomb.antiplanter
+				if(isAlive self)
+				{
+					self thread level.jvbot_modscript[debug]::debugmodifylight -128 green
+					self thread level.jvbot_modscript[debug]::debugmodifylight -128 blue
+				}
+				break
+			activate:
+				local.voids = 0
+				// attack bomb planter
+				self thread level.jvbot_modscript[debug]::debugmodifylight 256 red
+
+				if(self.enemy == NULL)
+					self turnto local.bomb
+				
+				wait 0.25				
+
+				self turnto NULL
+
+				while(isAlive self && self.task == "defendbomb" && self.parm[1] == local.bombnode && self.subtask == activate)
+				{
+					if !(self cansee local.bomb 90 512)
+						self waitthread level.jvbot_modscript[libbomb]::activate local.bombnode
+
+					wait level.jvbot_loopdelay
+					waitframe
+				}
+				if(isAlive self)
+					self thread level.jvbot_modscript[debug]::debugmodifylight -256 red
+				break
+			camp:
+				local.voids = 0
+				self thread level.jvbot_modscript[debug]::debugmodifylight 128 green
+				self waitthread level.jvbot_modscript[libbomb]::camp local.bombnode
+				if(isAlive self)
+					self thread level.jvbot_modscript[debug]::debugmodifylight -128 green
+				break
+			default:
+				waitframe
+				wait level.jvbot_loopdelay
+				local.voids++
+				//if(local.voids >= 3)
+					// something's gone wrong
+				//	self.task = idle
+		}
+	}
+end
+
+defuse local.bombnode:
+	local.subtask = self.subtask
+	local.bomb = local.bombnode.target
+	// make sure we're not going to yet
+	while(isAlive self && self.go_to == 1 && self.task == "defendbomb" && self.parm[1] == local.bombnode && self.subtask == local.subtask)
+	{
+		wait level.jvbot_loopdelay
+		waitframe
+	}
+	
+	if(isAlive self && self.go_to != 1 && self.task == "defendbomb" && self.parm[1] == local.bombnode && self.subtask == local.subtask)
+	{
+		self.nodeviate = 1
+		self thread level.jvbot_main_script::action_go_to_routed local.bombnode 348
+		while(isAlive self && self.go_to == 1 && self.task == "defendbomb" && self.parm[1] == local.bombnode && self.subtask == local.subtask)
+		{
+			wait level.jvbot_loopdelay
+			waitframe
+		}
+		if(isAlive self)
+		{
+			self.nodeviate  = 0
+			if(self.go_to == 0)
+			{
+				// reached destination
+				// point of no return
+				local.bomb.hasantiplanter = 1
+				self thread level.jvbot_modscript[debug]::debugmodifylight 256 blue
+				self waitthread dodefuse local.bombnode
+				self thread level.jvbot_modscript[debug]::debugmodifylight -256 blue
+				local.bomb.hasantiplanter = 0
+			}
+			else
+				self waitthread level.jvbot_modscript[libbomb]::breakrun
+		}
+	}
+end
+
+dodefuse local.bombnode:
+	self.notask = 1
+	local.bomb = local.bombnode.target
+	self waitthread level.jvbot_main_script::action_go_to local.bombnode 64
+	if(isAlive self)
+	{
+		self.avoidplayer = 0
+		self waitthread level.jvbot_modscript[libbomb]::bombaction local.bomb
+		thread abort local.bomb
+		local.thread = parm.previousthread
+		local.bomb waitthread global/jv_obj_dm.scr::bomb_defuse self
+		if(local.thread)
+			local.thread end
+		// bomb defused - good job :) (or aborted)
+		if(isAlive self)
+		{
+			if(self.position == crouch)
+				self waitexec global/stand.scr
+				
+			self.avoidplayer = 1
+			self.notask = 0
+		}
+	}
+end
+
+abort local.bomb:
+	self waittill pain
+	if(local.bomb.critical != 1)
+	{
+		self aimat self.fact.attacker
+		self.useheld = 0 // stop planting the bomb
+		wait 0.5
+		self aimat NULL
+	}
+end

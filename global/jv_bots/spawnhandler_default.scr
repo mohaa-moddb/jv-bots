@@ -1,0 +1,747 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Main Spawn Handler Script
+
+Controls the (re)spawning of bots.
+Executes kill events, such as spawning of 
+medkits, kill notifications to players and 
+sporadically sends a taunt command to attacker.
+---------------------------------------------
+*/
+
+/**
+Initialize counter variables. Internal use.
+*/
+setup:
+	level.botlastid = 0
+	level.bots = 0
+	level.nodrophealth = 1
+	level.botnum = 0
+	level.teambots[allies] = 0
+	level.teambots[axis] = 0
+	level.jvbot_respawning = waitthread level.jvbot_main_script::getrankedvar 1 level.jvbot_respawning jvbot_respawning int NIL 1
+end
+
+shutdown:
+	// no shutdown
+end
+
+/**
+Adds a bot which will automatically respawn.
+Returns the ID of the new bot.
+Can be called externally.
+
+string name:	name to use for bot.
+string team:	allies or axis.
+string spawner: sets a spawner identifier to keep track of bots.
+*/
+addbot local.name local.team local.spawner:
+	if(level.jvbot_jv_mp_ai_running == 1)
+	{
+		level.botnum++ // unique ID
+		local.num = level.botnum
+		
+		if(local.spawner == NIL)
+			local.spawner = "(unknown)"
+			
+		local.model = waitthread getmodel local.team
+		local.weaponinfo = waitthread level.jvbot_modscript[libweapon]::getweapon local.team local.model local.name
+		
+		level.botenabled[local.num] = 1
+		level.botremoved[local.num] = 0
+		level.botname[local.num] = local.name
+		level.botteam[local.num] = local.team
+		level.botmodel[local.num] = local.model
+		level.botspawner[local.num] = local.spawner
+		level.botweaponinfo[local.num] = local.weaponinfo
+		
+		thread main local.num	
+	}
+	else
+		println "ERROR[spawnhandler_default::addbot]: Bot script not running."
+end local.num
+
+/**
+Kicks the bot with the given ID.
+
+integer num: ID of bot to be kicked.
+*/
+kickbot local.num:
+	level.botenabled[local.num] = 0
+	waitthread removebot local.num
+end
+
+/**
+Kicks all bots without notification.
+*/
+kickall:
+	println "INFO[spawnhandler_default::kickall]: Kicking all bots"
+	if(level.botnum != NIL)
+	{
+		for(local.i = 1; local.i <= level.botnum; local.i++)
+			waitthread kickbot local.i
+	}
+end
+
+/**
+Switches a bot to an other team.
+Unsupported.
+*/
+switchbot local.num local.team:
+	if(local.team != level.botteam[local.num])
+	{
+		local.model = waitthread getmodel local.team
+		local.weaponinfo = waitthread level.jvbot_modscript[libweapon]::getweapon local.team local.model level.botname[local.num]
+		
+		waitthread removebot local.num		
+		level.botteam[local.num] = local.team
+		level.botmodel[local.num] = local.model
+		level.botweaponinfo[local.num] = local.weaponinfo
+	}
+end
+
+/**
+Immediately removes the bot. Internal use.
+
+integer num: ID of bot to remove.
+*/
+removebot local.num:
+	level.botremoved[local.num] = 1
+	if(level.botstate[local.num] == prepare)
+	{
+		level.botspawn[local.num].handled = 1
+		while(level.botstate[local.num] == prepare)
+		{
+			waitframe
+			wait level.jvbot_loopdelay
+		}
+	}
+	if(level.botstate[local.num] == active)
+		level.botspawn[local.num] bedead
+end
+
+/**
+Main bot handler. Internal use.
+
+integer num: ID of bot for botspawn identification.
+*/
+main local.num:
+	local.name = level.botname[local.num]
+	local.model = level.botmodel[local.num]
+	level.botstate[local.num] = entering
+	while(level.botenabled[local.num] == 1)
+	{
+		local.team = level.botteam[local.num]
+		level.teambots[local.team]++
+		if(local.team == allies)
+			iprintlnbold_noloc local.name " has joined the Allies"
+		else
+			iprintlnbold_noloc local.name " has joined the Axis"
+		
+		while(level.botenabled[local.num] == 1 && level.botteam[local.num] == local.team)
+		{
+			if(level.jvbot_g_allowspawn == 0)
+				println "WARNING[spawnhandler_default::main]: Forced bot spawn after blockjoin for " local.name
+			
+			local.spawnposition = waitthread getspawnposition local.team
+			waitthread spawn local.spawnposition local.num
+			
+			while(level.jvbot_respawning == 0 && level.botenabled[local.num] == 1 && level.botteam[local.num] == local.team)
+				wait 1
+				
+			if(level.botenabled[local.num] == 1)
+				wait ( (randomfloat 3) + 5)
+			level.botremoved[local.num] = 0
+		}
+		waitframe
+		level.teambots[local.team]--
+	}
+	level.botstate[local.num] = away
+	iprintlnbold_noloc local.name " has left the battle"
+end
+
+/**
+Spawns a bot and waits for death. Creates a medkit and 
+sends a kill event to the attacker. Internal use.
+
+entity spawnposition:	location to spawn the bot
+integer num:			bot ID
+*/
+spawn local.spawnposition local.num:
+	level.botstate[local.num] = prepare
+	local.team = level.botteam[local.num]
+	local.botname = level.botname[local.num]
+	if(level.jvbot_forcemodels == 1)
+	{
+		if(local.team == allies)
+			local.model = level.jvbot_alliespreset[1]
+		else
+			local.model = level.jvbot_axispreset[1]
+	}
+	else
+		local.model = level.botmodel[local.num]
+	local.weaponinfo = level.botweaponinfo[local.num]
+	
+	local.health_bonus = 10 * level.jvbot_skill - 20
+	
+	local.newbot = spawn local.model origin local.spawnposition.origin
+	
+	if(level.jvbot_showavatar == 1)
+	{
+		local.newbot.headicon = spawn script_model model ("models/hud/" + local.team + ".tik")
+		local.newbot.headicon attach local.newbot "Bip01 Neck"
+	}
+
+	level.botspawn[local.num] = local.newbot
+	local.newbot.num = local.num
+	local.newbot hide
+	local.newbot nodamage
+	local.newbot notsolid
+	local.newbot threatbias ignoreme
+	local.newbot ai_off
+	local.newbot.health = 100 + local.health_bonus
+	
+	if(local.spawnposition.yaw == NIL || local.spawnposition.yaw == NULL)
+		local.spawnposition.yaw = 0
+		
+	local.newbot.angles = ( 0 local.spawnposition.yaw 0 )
+	local.newbot.dmteam = local.team
+
+	local.newbot waitthread level.jvbot_modscript[libweapon]::setweapon local.weaponinfo
+	local.newbot waitthread setgeneral
+	local.newbot.base_accuracy = local.newbot.accuracy
+			
+	local.newbot forceActivate
+	
+	level.bots++
+	local.id = waitthread getindex
+	if(local.id > level.botlastid)
+		level.botlastid = local.id
+	level.actualbots[local.id] = local.newbot
+	local.newbot.targetname = "ai: " + local.id
+	local.name = local.newbot.targetname
+	local.newbot.cur_task_priority = 0
+		
+	while(isAlive local.newbot && local.newbot.handled != 1)
+	{
+		waitframe
+		wait level.jvbot_loopdelay	
+	}
+	
+	local.newbot ai_on
+	local.newbot takedamage
+	local.newbot solid
+	local.newbot show
+	local.newbot threatbias 0
+	local.newbot thread level.jvbot_main_script::botcontrol
+	level.botstate[local.num] = active
+	local.newbot thread sneakshot
+	
+	local.newbot waittill death
+	waitthread setlastbotid
+	level.botstate[local.num] = dead
+	
+	if(local.newbot.headicon)
+		local.newbot.headicon remove
+		
+	if(level.botremoved[local.num] != 1)
+	{			
+		local.attacker = local.newbot.fact.attacker
+		if(local.attacker.classname == "Player")
+		{	
+			if(local.attacker.dmteam == local.newbot.dmteam)
+			{
+				local.nomedkit = 1
+				local.bold = 0
+			}
+			else	
+				local.bold = 1
+			
+			if(local.botname != NIL)
+				local.attacker iprint ("You killed " + local.botname) local.bold
+			else
+				local.attacker iprint "You killed a bot" local.bold
+		}
+		else if(local.attacker.classname == "Actor")
+		{
+			local.otherbot = local.newbot.fact.attacker
+			local.num = randomint 20
+			if(local.num == 0)
+				local.otherbot thread killhappiness
+		}
+		if(local.newbot.enemy != NULL)
+		{
+			if(isAlive local.newbot.enemy)
+			{
+				local.luckyguy = local.newbot.enemy
+				if(local.luckyguy.classname == "Actor" && local.luckyguy.health < 50 && local.luckyguy != local.attacker)
+					local.luckyguy thread saythanks local.attacker
+			}
+		}
+		if(local.nomedkit != 1)
+		{
+			local.medkit = spawn models/items/dm_50_healthbox.tik origin local.newbot.origin angles local.newbot.angles targetname health
+			local.medkit.time = level.time
+			local.medkit set_respawn 0
+			local.medkit item_droptofloor
+			local.medkit.trigger = spawn trigger_multiple spawnflags 12
+			local.min = vector_subtract local.medkit.origin (24 24 24)
+			local.max = vector_add local.medkit.origin (24 24 24)
+			local.medkit.trigger setsize local.min local.max
+			local.medkit.trigger.medkit = local.medkit
+			local.medkit.trigger thread medkit_trigger
+			local.medkit.trigger thread remove 10
+			local.medkit thread remove 10
+		}
+	}
+	else
+	{
+		local.newbot notsolid
+		local.newbot hide
+		local.newbot thread remove 10
+	}
+end
+
+/**
+Sporadic bot taunting. Can be called by 
+an external script.
+*/
+killhappiness:
+	local.num = randomint 9
+				
+	if(local.num == 0)
+		local.say = da
+	else if(local.num == 1)
+		local.say = db
+	else if(local.num == 2)
+		local.say = dc
+	else if(local.num == 3)
+		local.say = dd
+	else if(local.num == 4)
+		local.say = de
+	else if(local.num == 5)
+		local.say = df
+	else if(local.num == 6)
+		local.say = dg
+	else if(local.num == 7)
+		local.say = dh
+	else
+		local.say = di
+	// taunt
+
+	wait 1.5
+	if(isAlive self && self.enemy == NULL)
+		self thread level.jvbot_main_script::say local.say
+end
+
+saythanks local.other:
+	wait 1.5
+	if(isAlive self && isAlive local.other)
+	{
+		if(self cansee local.other 360 512)
+		{
+			local.sound = randomint 3
+			switch(local.sound)
+			{
+				case 0:
+					local.say = "cg"
+					break
+				case 1:
+					local.say = "ch"
+					break
+				default:
+					local.say = "ci"
+					break
+			}
+			self lookat local.other
+			wait 0.2
+			self waitthread level.jvbot_main_script::say local.say
+			wait 1
+			if(isAlive self)
+				self lookat NULL	
+		}
+	}
+end
+
+
+/**
+Increases bot health when walking over a medkit.
+Only works for medkits dropped by dead bots.
+Internal use.
+*/
+medkit_trigger:
+	self waittill trigger
+	while(self && self.medkit)
+	{
+		local.prev = parm.other.health
+		if(local.prev < 100) // can't heal a sound bot
+		{
+			parm.other.health += 50
+			if(parm.other.health > 100)
+				parm.other.health = 100
+			self.medkit remove
+			if(self)
+				self remove
+			break
+		}
+		waitframe
+		self waittill trigger
+	}
+end
+
+/**
+Removes the entity after the given delay.
+
+float delay: number of seconds to wait before removal.
+*/
+remove local.delay:
+	wait local.delay
+	
+	if(self)
+		self remove
+end
+
+/**
+Gets the correct index for actualbots array.
+This value is NOT equal to bot ID.
+Internal use.
+*/
+getindex:
+	for(local.i = 1; local.i <= level.bots; local.i++)
+	{
+		if(level.actualbots[local.i] == NULL || level.actualbots[local.i] == NIL || !(isAlive level.actualbots[local.i]))
+			end local.i
+	}
+end level.bots
+
+/**
+Removes elements from actualbots array when the number 
+of bots decreases. Bot IDs remain unaltered.
+Internal use.
+*/
+setlastbotid:
+	for(local.i = level.botlastid; local.i >= 1; local.i--)
+	{
+		if(level.actualbots[local.i] == NULL || level.actualbots[local.i] == NIL || !(isAlive level.actualbots[local.i]))
+			level.botlastid--
+		else
+			break
+	}
+end
+
+/**
+Prints the current actualbots array to the console.
+For debug purposes only.
+*/
+printbotarray:
+	println " "
+	println "BoT array"
+	println "=========="
+	for(local.i = 1; local.i <= level.actualbots.size; local.i++)
+	{
+		print "[" local.i "]: " level.actualbots[local.i]
+		if(level.actualbots[local.i] != NIL && level.actualbots[local.i] != NULL)
+		{
+			print " #" level.actualbots[local.i].entnum
+			if !(isAlive level.actualbots[local.i])
+				print " (dead)"
+		}
+		println
+		if(local.i == level.botlastid)
+			println "<------------------>"
+	}
+	println
+	println ""
+end
+
+/**
+Sets up the bot.
+*/
+setgeneral:
+	self.targetname = "ai"
+	self.interval = 128 // test, prevents jams
+	self.nosurprise = 1
+	self.nolongpain = 1
+	self.enemysharerange = 1
+	self.hearing = 0
+	self.fov = 90
+	self.noticescale = 1
+	self.sound_awareness = 0
+	
+	//* sets the bot to use a custom animation handler.
+	self.attackhandler = level.jvbot_attackhandler
+	//* overwrites default init handler
+	self.lastpaintime = -5
+	self.pain = 0
+	self thread setpainhandler
+	
+	self.maxdist = self.sight
+	self.leash = self.mindist
+	
+	if(level.debug_light == 1)
+		self thread level.jvbot_modscript[debug]::debughighlight	
+end
+
+setpainhandler:
+	while(isAlive self)
+	{
+		self.painhandler = "anim/jv_bots/pain.scr"
+		waitframe
+	}
+end
+
+sneakshot:
+	// annoying quick reaction ;)
+	while(isAlive self)
+	{
+		if(self.enemy && isAlive self.enemy && level.jvbot_skill > 1)
+		{
+			if !(vector_within self.origin self.enemy.origin 200)
+			{
+				if(self cansee self.enemy 60 2000)
+				{
+					if(self ReadyToFire && self.inreload != 1)
+					{
+						self aimat self.enemy
+						wait 0.2
+						local.acc = self.accuracy
+						self.accuracy = level.jvbot_skill * 10
+						self fire
+						wait 0.1
+						self.accuracy = local.acc
+						self aimat NULL
+						while (isAlive self && isAlive self.enemy && self cansee self.enemy 60 2000)
+							wait 0.1
+					}
+				}
+			}	
+		}
+		waitframe
+	}
+end
+
+/**
+Returns an array with the number of allies and 
+axis team members (bots + players).
+local.team is an optional argument
+*/
+getteammembers local.team local.botsonlyalive local.playersalsodead:
+	if(local.playersalsodead == 1)
+		local.players = $player
+	else
+		local.players = waitthread global/jv_mp_players.scr::get_active_players $player
+
+	switch(local.team)
+	{
+		allies:
+			local.alliesplayers = waitthread global/jv_mp_players.scr::get_team_players local.players allies
+			if(local.botsonlyalive != NIL)
+				local.bots = waitthread getnumaliveteambots allies
+			else
+				local.bots = level.teambots[allies]
+			local.output = local.alliesplayers.size + local.bots
+			break
+		axis:
+			local.axisplayers = waitthread global/jv_mp_players.scr::get_team_players local.players axis
+			if(local.botsonlyalive != NIL)
+				local.bots = waitthread getnumaliveteambots axis
+			else
+				local.bots = level.teambots[allies]
+			local.output = local.axisplayers.size + local.bots
+			break
+		default:	
+			local.alliesplayers = waitthread global/jv_mp_players.scr::get_team_players local.players allies
+			local.axisplayers = waitthread global/jv_mp_players.scr::get_team_players local.players axis
+			if(local.botsonlyalive != NIL)
+			{
+				local.alliesbots = waitthread getnumaliveteambots allies
+				local.axisbots = waitthread getnumaliveteambots axis
+			}
+			else
+			{
+				local.alliesbots = level.teambots[allies]
+				local.axisbots = level.teambots[axis]
+			}
+			local.allies = local.alliesplayers.size + local.alliesbots
+			local.axis = local.axisplayers.size + local.axisbots
+			local.output = local.allies::local.axis
+	}
+end local.output
+
+getnumaliveteambots local.team:
+	local.num = 0
+	for(local.i = 1; local.i <= level.botlastid; local.i++)
+	{
+		local.bot = level.actualbots[local.i]
+		if(isAlive local.bot && local.bot.dmteam == local.team)
+			local.num++
+	}
+end local.num
+
+/**
+Returns the team with clearly fewer members.
+*/
+geteventeam:
+	local.array = waitthread getteammembers
+	local.allies = local.array[1]
+	local.axis = local.array[2]
+	if(local.allies > local.axis)
+		local.team = axis
+	else if(local.axis > local.allies)
+		local.team = allies
+	else
+	{
+		if(randomint 2 == 0) // 0 or 1
+			local.team = allies
+		else
+			local.team = axis
+	}
+end local.team
+
+/**
+Returns a model as stored in the level.jvbot_<team>preset array,
+which was created based on $alliesspawnpreset and $axisspawnpreset 
+entities in the bsp file.
+
+string team: allies or axis
+*/
+getmodel local.team:
+	if(local.team == axis)
+		local.models = level.jvbot_axispreset
+	else
+		local.models = level.jvbot_alliespreset
+		
+	local.num = randomint local.models.size + 1
+	local.model = local.models[local.num]
+end local.model
+
+/**
+Returns a spawn position for the corresponding team.
+
+string team: 	allies or axis
+bool noretry:	don't try opposing spawn if no spawn pos is found.
+*/
+getspawnposition local.team local.noretry:
+	local.spawnposlist = $(local.team + "spawn")
+	// find enabled spawn positions
+	local.j = 1
+	for(local.i = 1; local.i <= local.spawnposlist.size; local.i++)
+	{
+		local.posspawnpos = local.spawnposlist[local.i]
+		if(local.posspawnpos.disablespawn != 1)
+		{
+			local.posspawnposlist[local.j] = local.posspawnpos
+			local.j++
+		}
+	}
+	if !(local.posspawnposlist.size > 0)
+	{
+		if(local.team == allies)
+			local.opp_team = axis
+		else
+			local.opp_team = allies
+			
+		if(local.noretry == NIL)
+		{
+			println "ERROR[spawnhandler_default::getspawnposition]: Cannot find a spawn position for team " local.team ", trying " local.opp_team
+			local.spawnpos = waitthread getspawnposition local.opp_team 1
+		}
+		else
+		{
+			println "ERROR[spawnhandler_default::getspawnposition]: Couldn't find a spawn position, using (0 0 0)."
+			if !($centerspawn)
+				local.spawnpos = spawn script_origin targetname "centerspawn" origin (0 0 0)
+			else
+				local.spawnpos = $centerspawn
+		}
+	}
+	else
+	{
+		local.k = 0
+		local.j = 0
+		while(local.k <= 0)
+		{
+			// order spawn positions by user groups
+			// start with users = 0 or NIL
+			for(local.i = 1; local.i <= local.posspawnposlist.size; local.i++)
+			{
+				local.pos = local.posspawnposlist[local.i]
+				if(local.pos.users == NIL)
+					local.pos.users = 0
+				if(local.pos.users <= local.j)
+				{
+					local.k ++
+					local.orderedspawnposlist[local.k] = local.pos
+				}
+			}
+			// clean up array
+			local.j++
+			// not necessary anymore
+			//local.posspawnposlist = waitthread subtractarrays local.posspawnposlist local.orderedspawnposlist
+		}
+		local.num = randomint(local.orderedspawnposlist.size) + 1
+		local.spawnpos = local.orderedspawnposlist[local.num]
+	}
+	local.spawnpos.users++
+	local.spawnpos thread decreaseusers 2 // give time to get away
+end local.spawnpos
+
+decreaseusers local.delay:
+	wait local.delay
+	self.users--
+end
+
+subtractarrays local.a local.b:
+	// removes all entries of b from a
+	local.k = 0
+	for(local.i = 1; local.i <= local.a.size; local.i++)
+	{
+		local.a_entry = local.a[local.i]
+		// check if this entry exists in b
+		local.in_b = 0
+		for(local.j = 1; local.j <= local.b.size; local.b++)
+		{
+			local.b_entry = local.b[local.j]
+			if(local.a_entry == local.b_entry)
+			{
+				local.in_b = 1
+				break	
+			}
+		}
+		if(local.in_b == 0)
+		{
+			local.k++
+			local.out[local.k] = local.a_entry
+		}
+	}
+end local.out

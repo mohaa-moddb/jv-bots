@@ -1,0 +1,175 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Sniper Behaviour.
+---------------------------------------------
+*/
+
+/**
+General setup.
+*/
+setup:
+	if($sniper)
+	{
+		for(local.i = 1; local.i <= $sniper.size; local.i++)
+		{
+			local.sniper_node = $sniper[local.i]
+			if(local.sniper_node.weight == NIL)
+				local.sniper_node.weight = 1
+		}
+		waitthread level.jvbot_main_script::addroute sniper 1
+	}
+end
+
+/**
+Priority factors:
+	-weapon
+	-distance
+	-node #weight
+	-node #noallies / #noaxis
+This task cannot be performed when the bot has an enemy.
+*/
+
+getpriority:
+	local.bestscore = 0
+	local.bestnode = NULL
+	local.weight = 0
+	if(self.enemy == NULL)
+	{
+		if($sniper.size > 0)
+		{
+			switch(self.weapon)
+			{
+				case "mauser kar 98d sniper":
+				case "springfield '03 sniper":
+					local.weight = 4
+					break
+				case "mauser kar 98k":
+				case "m1 garand":
+					local.weight = 1
+					break
+				case "bar":
+				case "stg44":
+					local.weight = 0.5
+					break
+				default:
+					local.weight = -1
+			}
+			if(local.weight > 0)
+			{		
+				for(local.i = 1; local.i <= $sniper.size; local.i++)
+				{
+					local.node = $sniper[local.i]
+					local.score = waitthread evaluate (local.node::local.weight)
+					if(local.score > local.bestscore)
+					{
+						local.bestnode = local.node
+						local.bestscore = local.score	
+					}
+				}
+			}
+		}
+	}
+	local.output = local.bestscore::local.bestnode::local.weight
+end local.output
+
+evaluate local.parm local.onlyeval:
+	local.node = local.parm[1]
+	local.weight = local.parm[2]
+	local.score = 0
+	if !((local.node.noallies == 1 && self.dmteam == allies) || (local.node.noaxis == 1 && self.dmteam == axis))
+	{
+		if(local.node.sniperenroute != 1 || local.node.sniper == self)
+		{
+			local.distance = vector_length (self.origin - local.node.origin)
+			if(local.distance < 256)
+				// prevent over reacting
+				local.distance = 256
+			local.score = 0.1 * (1024 / (local.distance + 1024)) + local.node.weight * local.weight
+		}
+	}
+end local.score
+
+/**
+Sniper action.
+*/
+action:
+	local.sniper_location = self.parm[1]
+	if(local.sniper_location.sniperenroute != 1)
+	{
+		local.sniper_location.sniperenroute = 1
+		local.sniper_location.sniper = self
+		self thread level.jvbot_modscript[debug]::debugmodifylight 64 green
+		self thread level.jvbot_modscript[debug]::debugmodifylight 64 red
+		self waitthread level.jvbot_main_script::action_go_to_routed local.sniper_location 64
+		if(isAlive self && self.task == sniper)
+		{
+			local.sniper_location.hassniper = 1
+			if(local.sniper_location.target != "")
+				self aimat local.sniper_location.target
+			
+			wait 0.4
+			if(local.sniper_location.nocrouch == NIL)
+			{
+				if(local.sniper_location.target == "" || sighttrace (self.origin + (0 0 48)) local.sniper_location.target.origin)
+					self waitexec global/crouch.scr
+			}
+			local.leash = self.leash
+			local.mindist = self.mindist
+			self.mindist = 0
+			self.leash = 0
+			self resetleash
+			self.fixedleash = 1
+			while(isAlive self && self.task == sniper && self.parm[1] == local.sniper_location)
+			{
+				waitframe
+				wait level.jvbot_loopdelay
+			}
+			if(isAlive self)
+			{
+				self.fixedleash = 0
+				self.leash = local.leash
+				self.mindist = local.mindist
+			}
+			local.sniper_location.hassniper = 0
+		}
+		if(isAlive self)
+		{
+			self thread level.jvbot_modscript[debug]::debugmodifylight -64 green
+			self thread level.jvbot_modscript[debug]::debugmodifylight -64 red
+		}
+		local.sniper_location.sniperenroute = 0
+		local.sniper_location.sniper = NULL
+	}
+	else
+		self.task = "idle"
+end

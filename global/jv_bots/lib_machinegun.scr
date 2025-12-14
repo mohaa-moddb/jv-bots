@@ -1,0 +1,533 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Machinegun Support Library
+---------------------------------------------
+*/
+
+setup:
+	for(local.mgnum = 1; local.mgnum <= $mg.size; local.mgnum++)
+		$mg[local.mgnum] thread mgcontrol
+end
+
+
+/**
+Checks if a player is using the gun. Returns the 
+player if he is, -1 otherwise.
+*/
+mgplayercheck:
+	// checks whether any players are using the turret atm
+	if(self.gunnertrigger)
+	{
+		for(local.i = 1; local.i <= $player.size; local.i++)
+		{
+			if($player[local.i].ingame == 1 && $player[local.i] isTouching self.gunnertrigger)
+				end $player[local.i]
+		}
+	}
+end -1
+
+/**
+Checks whether the given player is using a mg-42.
+Returns -1 if he is, 0 otherwise.
+*/
+usemgcheck:
+	// checks whether or not self is using a mg
+	for(local.i = 1; local.i <= $mg.size; local.i++)
+	{
+		local.player = $mg[local.i] waitthread mgplayercheck
+		if(local.player != -1 && local.player == self)
+			end -1
+	}
+end 0
+
+/**
+Main thread for all gun turrets.
+*/
+mgcontrol:
+	self.mgcontroller = 1
+	if(self.maxyawoffset == NIL)
+	{
+		println "WARNING[lib_machinegun::mgcontrol]: Machine gun turret " self " has no #maxyawoffset, using default (45)."
+		self.maxyawoffset = 45
+	}
+	self maxyawoffset self.maxyawoffset
+	if(self.targetlist == NIL && self.range == NIL)
+	{
+		if($world.farplane != 0)
+		{
+			local.dist = $world.farplane * 0.826
+			println "WARNING[lib_machinegun::mgcontrol]: Machine gun turret " self " doesn't have a #range key, using 82.6% of farplane (" local.dist ")."
+			self.range = local.dist
+		}
+		else
+		{
+			println "WARNING[lib_machinegun::mgcontrol]: Machine gun turret " self " doesn't have a #range key, using default (4000)."
+			self.range = 4000
+		}
+	}
+	if($world.farplane != 0 && self.range > $world.farplane)
+		println ("WARNING[lib_machinegun::mgcontrol]: Machine gun (#set: " + self.set + ", #range: " + self.range + ") sees through farplane (" + (int $world.farplane) + ")!")
+	if(self.gunner_location == NIL)
+	{
+		for(local.i = 1; local.i <= $mg_gunner.size; local.i++)
+		{
+			local.node = $mg_gunner[local.i]
+			if(local.node.set == self.set)
+			{
+				self.gunner_location = local.node
+				break
+			}
+		}
+		if(self.gunner_location == NIL)
+			self.gunner_location = self.origin - (self.forwardvector * 64)
+	}
+	if(self.spotter_location == NIL)
+	{
+		for(local.i = 1; local.i <= $mg_spotter.size; local.i++)
+		{
+			local.node = $mg_spotter[local.i]
+			if(local.node.set == self.set)
+			{
+				self.spotter_location = local.node
+				break
+			}
+		}
+		if(self.spotter_location == NIL)
+			self.spotter_allowed = 0
+		else
+		{
+			self.spotter_allowed = 1
+			println "INFO[lib_machinegun::mgcontrol]: Spotter allowed on gun " local.i
+		}
+	}
+	for(local.i = 1; local.i <= $mg_node.size; local.i++)
+	{
+		local.node = $mg_node[local.i]
+		if(local.node.set == self.set)
+		{
+			self.node = local.node
+			break
+		}
+	}
+	// find the trigger
+	for(local.i = 1; local.i <= $mg_gunnertrigger.size; local.i++)
+	{
+		local.tmptrigger = $mg_gunnertrigger[local.i]
+		if(local.tmptrigger.set == self.set)
+		{
+			self.gunnertrigger = local.tmptrigger
+			break
+		}
+	}
+	self.forwardent = spawn script_origin
+	self.forwardent.origin = self.origin + (self.forwardvector * 512)
+	
+	if(self.attackplayers != 0)
+		self.attackplayers = 1
+	if(self.attackbots != 0)
+		self.attackbots = 1
+	
+	if(self.noallies != NIL)
+		self.team_allowed[allies] = 0
+	else
+		self.team_allowed[allies] = 1
+	
+	if(self.noaxis != NIL)
+		self.team_allowed[axis] = 0
+	else
+		self.team_allowed[axis] = 1
+		
+	if(self.weight == NIL)
+		self.weight = 1
+	
+	self.runners = 0
+
+	if(self.accuracy == NIL)
+		self.missfraction = 0.05
+	else
+		self.missfraction = 1 - (self.accuracy / 100)
+
+	self.hasgunner = 0
+	self.hasspotter = 0
+	self.baseyaw = self.yaw
+	
+	while(self.mgcontrolend != 1)
+	{
+		while(self.mgcontrolend != 1 && self.hasgunner == 0)
+		{
+			waitframe
+			wait level.jvbot_loopdelay
+		}
+		if(self.hasgunner)
+			self waitthread mgactive
+		waitframe
+	}
+	self.mgcontroller = 0
+end
+
+/**
+Quits control thread for all machineguns.
+*/
+shutdown:
+	for(local.i = 1; local.i <= $mg.size; local.i++)
+	{
+		$mg[local.i].mgcontrolend = 1
+		if(level.jvbot_verbose)
+			println "INFO[lib_machinegun::shutdown]: Termination gun turret " local.i
+		while($mg[local.i].mgcontroller == 1)
+			wait 0.5
+		if(level.jvbot_verbose)
+			println "INFO[lib_machinegun::shutdown]: Gun turret " local.i " terminated."
+		$mg[local.i].mgcontrolend = 0
+	}
+end
+
+/**
+Sets up the gunner.
+
+entity gun: specifies mg-42 to use.
+*/
+mggunnersetup local.gun:
+	// turns the gunner into a machinegunner
+	self unholster // just to be sure he doesn't try to holster the mg turret
+	self runto local.gun.gunner_location
+	self waittill movedone
+	self runto NULL
+	self turret local.gun
+	self type_idle machinegunner
+	self type_attack machinegunner
+	self type_grenade machinegunner
+	self.deathanim = "death_fall_back"
+end
+
+/**
+Restores the gunner into a regular bot.
+*/
+mggunnerrestore:
+	self unholster // just to be sure
+	self type_idle "idle"
+	self type_attack "cover"
+	self type_grenade "grenade"
+end
+
+/**
+Sets up the spotter for the given gun.
+
+entity gun: corresponding mg-42 turret
+*/
+mgspottersetup local.gun:
+	while(isAlive self && self.go_to == 1)
+	{
+		waitframe
+		wait level.jvbot_loopdelay
+	}
+	
+	if !(isAlive self)
+		end
+
+	self runto local.gun.spotter_location
+	self waittill movedone
+	self runto NULL
+	waitframe
+	self turnto local.gun.forwardent
+	self waittill turndone
+	self holster
+	waitframe
+end
+
+/**
+Turns the spotter into a regular bot again.
+*/
+mgspotterrestore:
+	self unholster
+	self runto NULL
+	waitframe
+end
+
+/**
+Returns all targets that are in range, both players and bots.
+*/
+
+// new targeting thread, doesn't require a gunner
+mggettargets local.gunnerteam:
+	local.attackplayers = self.attackplayers
+	local.attackbots = self.attackbots
+	
+	if(local.attackplayers == 1)
+	{
+		local.playertargets = waitthread global/jv_mp_players.scr::get_active_players $player
+		if(local.gunnerteam == allies)
+			local.playertargets = waitthread global/jv_mp_players.scr::get_team_players local.playertargets axis
+		else
+			local.playertargets = waitthread global/jv_mp_players.scr::get_team_players local.playertargets allies
+		local.playertargets = waitthread global/jv_mp_players.scr::get_area_entities local.playertargets self.origin self.range
+	}
+	if(local.attackbots == 1)
+	{
+		local.num = 0
+		for(local.botnum = 1; local.botnum <= level.bots; local.botnum++)
+		{
+			if(isAlive level.actualbots[local.botnum])
+			{
+				local.bot = level.actualbots[local.botnum]
+				if(local.gunnerteam != local.bot.dmteam && vector_within self.origin local.bot.origin self.range)
+				{
+					local.num++
+					local.bottargets[local.num] = local.bot
+				}
+			}
+		}
+	}
+	for(local.index = 1; local.index <= local.playertargets.size; local.index++)
+		local.targets[local.index] = local.playertargets[local.index]
+	local.newindex = local.playertargets.size
+	for(local.index = 1; local.index <= local.bottargets.size; local.index++)
+		local.targets[(local.newindex + local.index)] = local.bottargets[local.index]
+end local.targets
+
+gethitabletargets local.team:
+	// returns the number of targets that can be engaged from this mg-42
+	// to determine task priority
+	// in lib_machinegun since it uses multiple threads from this script file
+	
+	local.targets = waitthread mggettargets local.team
+	
+	// canshoot checks
+	local.j = 0
+	for(local.i = 1; local.i <= local.targets.size; local.i++)
+	{
+		local.target = local.targets[local.i]
+		// use entity origin instead of head, since we only need a yaw check
+		local.j += self waitthread canshoot local.target.origin 1 1
+	}
+end local.j
+
+canshoot local.vector local.nodistance local.nosighttrace:
+	if(local.vector != NIL)
+	{
+		if(local.nodistance != NIL || vector_within local.vector self.origin self.range)
+		{
+			local.yaw = (vector_toangles (local.vector - self.origin))[1]
+			local.minyaw = self.baseyaw - self.maxyawoffset
+			local.maxyaw = self.baseyaw + self.maxyawoffset
+			if(local.yaw >= local.minyaw)
+			{
+				if(local.yaw <= local.maxyaw)
+				{
+					if(local.nosighttrace != NIL || sighttrace self.origin local.vector 1)
+						end 1
+				}
+			}
+		}
+	}
+end 0
+
+/**
+Main gun attack thread. Internal use.
+*/
+mgactive:
+	while(self.hasgunner == 1 && self.gunner.turret != self)
+	{
+		waitframe
+		wait level.jvbot_loopdelay
+	}
+	while(self.hasgunner == 1)
+	{
+		if(self.targetlist == NIL)
+			local.postargets = waitthread mggettargets self.gunner.dmteam self.attackplayers self.attackbots
+		else
+			local.postargets = self.targetlist
+		
+		// checking visibility
+		local.newnum = 0
+		for(local.num = 1; local.num <= local.postargets.size; local.num++)
+		{
+			local.target = local.postargets[local.num]
+			if(local.target.classname == "Player" || local.target.classname == "Actor")
+				local.canshoot = self waitthread canshoot (local.target gettagposition "Bip01 Head")
+			else
+				local.canshoot = self waitthread canshoot local.target.origin
+			
+			if(local.canshoot)
+			{
+				local.newnum++
+				local.targets[local.newnum] = local.target
+			}
+			else
+			{
+				if(self.hasspotter == 1 && (self.spotter cansee local.target 180 self.range || self.spotter cansee local.target 360 self.range))
+				{
+					self.spotter turnto local.target
+					self.spotter.notask = 1
+					wait 4
+					if(isAlive self.spotter)
+					{
+						self.spotter.task = "idle"
+						self.spotter.notask = 0
+					}
+				}
+				if(self.gunner cansee local.target 360 self.range)
+				{
+					//release gun turret
+					self.gunner turnto local.target	
+					self.gunner.notask = 1
+					wait 4
+					if(isAlive self.gunner)
+					{
+						self.gunner.notask = 0
+						self.gunner.task = "idle"
+					}
+					end // no attack possible
+				}
+			}
+		}
+		if(local.newnum > 0)
+		{
+			local.unluckynumber = randomint local.newnum + 1 // randomint from 1 to .size
+			local.target = local.targets[local.unluckynumber]
+			if(self.hasspotter == 1 && local.target != local.previoustarget && local.target != NIL)
+				self thread mgspotter_tap local.target
+			local.previoustarget = local.target
+			self waitthread mgattack local.target
+		}
+		else
+			wait level.jvbot_loopdelay
+		
+		waitframe
+	}
+end
+
+/**
+Spotter taps gunner on the head.
+
+entity target: enemy to point at.
+*/
+mgspotter_tap local.target:
+	if(self.tapping != 1)
+	{
+		self.tapping = 1
+		self.spotter lookat local.target
+		if(randomint 5 == 1)
+			self.spotter waitthread level.jvbot_main_script::say cc // enemy spotted
+		if (((local.target.origin - self.origin) * self.leftvector) >= 0)
+        	self.spotter anim MG42_spotter_stand_left
+   	 	else
+        	self.spotter anim MG42_spotter_stand_right
+		wait 2
+		self.spotter lookat NULL
+		self.tapping = 0
+	}
+end
+
+/**
+Fire at the given target.
+
+entity target: victim.
+*/
+mgattack local.target:
+	if(isAlive self.gunner)
+	{
+		self.gunner type_idle machinegunner
+		self.gunner turret self
+	}
+	
+	if(local.target.classname == "Player" || local.target.classname == "Actor")
+		local.targettype = head
+	else
+		local.targettype = origin
+
+	local.targetent = spawn script_origin origin (local.target.origin + (0 0 64))
+	local.targetent waitthread targetentbind local.target local.targettype
+
+	local.time = 0
+	while(self.hasgunner == 1 && isAlive local.target && local.time < 6)
+	{
+		if(local.targettype == head)
+			local.canshoot = waitthread canshoot (local.target gettagposition "Bip01 Head")
+		else
+			local.canshoot = waitthread canshoot local.target.origin
+			
+		if(local.canshoot)
+		{
+			self setaimtarget local.targetent
+			wait 0.6
+			local.time += 0.6
+			local.shoottime = 0
+			self startfiring
+			while(self.hasgunner == 1 && isAlive local.target && local.time < 6 && local.canshoot) //self.gunner cansee local.targethead (2 * self.maxyawoffset) self.range)
+			{
+				local.distance = vector_length (self.origin - local.target.origin)
+				local.cranx = randomfloat 1024 - 1024
+				local.crany = randomfloat 1024 - 1024
+				local.cranz = randomfloat 1024 - 1024
+				local.skill = level.jvbot_skill
+				local.skill_mod = (4.1 - local.skill) / 2.0
+				local.cranxyz = vector_scale (local.cranx local.crany local.cranz) ((local.skill_mod * local.distance * self.missfraction) / 1024)
+				local.targetent unbind
+				local.targetent.origin = local.target.origin + local.cranxyz + (0 0 64)
+				local.targetent waitthread targetentbind local.target local.targettype
+				wait 0.4
+				local.time += 0.4
+				local.shoottime +=0.4
+				if(isAlive local.target)
+				{
+					if(local.targettype == head)
+						local.canshoot = waitthread canshoot (local.target gettagposition "Bip01 Head")
+					else
+						local.canshoot = waitthread canshoot local.target.origin
+				}
+			}
+			self stopfiring
+			if(self.hasgunner == 1 && local.shoottime > 3 && self.noreload == NIL)
+			{
+				self.gunner reload_mg42
+				local.starttime = level.time
+				self.gunner waittill animdone
+				local.time += (level.time - local.starttime)
+			}
+		}
+		wait 0.5
+		local.time += 0.5
+	}
+	self setaimtarget self.forwardent
+	local.targetent delete
+	if(local.targethead && local.removehead)
+		local.targethead delete
+end
+
+targetentbind local.target local.targettype:
+	if(local.targettype == head)
+		self attach local.target "Bip01 Head"
+	else
+		self bind local.target
+end

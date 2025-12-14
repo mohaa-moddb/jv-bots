@@ -1,0 +1,590 @@
+/**
+Main Player Handler script for MoH:AA (t)dm/obj
+===============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Main Player Handler
+
+Runs threads when a player joins the game.
+---------------------------------------------
+*/
+
+/**
+Main thread. Run at startup below waittill spawn.
+
+Use level.main_player_handler_debug = 1 for verbose output.
+*/
+main_player_handler:
+	if(level.main_player_handler == NIL)
+		level.main_player_handler = 0
+
+	level.main_player_handler++
+	
+	if(level.main_player_handler > 1)
+	{
+		println "INFO[jv_mp_players::main_player_handler]: Handler already running, exiting."
+		end
+	}
+	
+	waitthread reset
+
+	if(level.main_player_handler_firstplayerfix == 1)
+		$player[1] thread firstplayerbugfix 
+	
+	while(level.main_player_handler >= 1)
+	{
+		for(local.playernum = 1; local.playernum <= $player.size; local.playernum++)
+		{
+			local.player = $player[local.playernum]
+			if(local.player.checked != 1)
+			{
+				local.player.checked = 1
+				local.player thread child_player_handler local.playernum
+			}
+		}
+		wait 0.5
+	}
+	println "INFO[jv_mp_players::main_player_handler]: Main player handler terminated."
+end
+
+/**
+Removes possibly fake player from the map. Optional.
+
+Set level.main_player_handler_firstplayerfix = 1 
+to fix the first player bug on dedicated servers.
+*/
+firstplayerbugfix:
+	if(self.dmteam == spectator)
+	{
+		println "INFO[jv_mp_players::firstplayerbugfix]: Verifying first player..."
+		local.location = self.origin
+		local.angles = self.angles
+		wait 5
+		if(self != NULL && self.dmteam == spectator && self.ingame != 1 && local.location == self.origin && local.angles == self.angles)
+		{
+			println "INFO[jv_mp_players::firstplayerbugfix]: Warning first player..."
+			local.times = 1
+			while(self != NULL && self.dmteam == spectator && self.ingame != 1 && local.times <= 10 && self.useheld == 0 && local.location == self.origin && local.angles == self.angles)
+			{
+				self iprint "Please move or hold USE"
+				wait 1
+				local.times++
+			}
+			// waited ten
+			if(self != NULL && local.times >= 10)
+			{
+				// disconnect and remove ent
+				self iprint "Disconnected, sorry"
+				println "INFO[jv_mp_players::firstplayerbugfix]: Kicked first player"
+				waitframe
+				if(self)
+					self remove
+			}
+			else
+			{
+				self iprint "Ok thanks"
+				println "INFO[jv_mp_players::firstplayerbugfix]: First player is ok"
+			}
+		}
+		else
+			println "INFO[jv_mp_players::firstplayerbugfix]: First player is ok"
+	}
+end
+
+/**
+Shutdown one main player handler request.
+*/
+shutdown:
+	level.main_player_handler--
+end
+
+/**
+Shutdown main player handler regardless 
+of the number of requests.
+*/
+kill:
+	level.main_player_handler = -1
+end
+
+/**
+Resets all players to 'not checked'. Internal use.
+*/
+reset:
+	for(local.playernum = 1; local.playernum <= $player.size; local.playernum++)
+	{
+		local.player = $player[local.playernum]
+		local.player.checked = 0
+	}
+end
+
+/**
+Player specific thread. Internal use.
+*/
+child_player_handler local.debugnum:
+	local.entnum = self.entnum
+	if(level.main_player_handler_debug)
+		println "INFO[jv_mp_players::child_player_handler]: Child handler started for player " local.debugnum " (entnum: " local.entnum ")."
+	while(level.main_player_handler >= 1 && self != NULL)
+	{
+		self.ingame = 0
+		self thread player_stage_thread 1
+		self.stage = 1
+		//--- stage 1 ---//
+		if(level.main_player_handler_debug)
+			println "INFO[jv_mp_players::child_player_handler]: Player " local.debugnum " has entered stage 1."
+			
+		while (level.main_player_handler >= 1 && self != NULL && (self.dmteam == "spectator" || !(isAlive self)))
+			wait 0.5
+		
+		if(level.main_player_handler >= 1 && self != NULL && isAlive self)
+		{
+			local.team = self.dmteam
+			//--- stage 2 ---//
+			if(level.main_player_handler_debug)
+				println "INFO[jv_mp_players::child_player_handler]: Player " local.debugnum " has entered stage 2."
+			self thread player_stage_thread 2
+			self.stage = 2
+			self waitthread player_join_game
+			//--- stage 3 ---//
+			self thread player_stage_thread 3
+			if(level.main_player_handler_debug)
+				println "INFO[jv_mp_players::child_player_handler]: Player " local.debugnum " has entered stage 3."
+			self.stage = 3
+			self.ingame = 1
+			while(level.main_player_handler >= 1 && self != NULL && isAlive self && local.team == self.dmteam)
+				wait 0.1
+		}
+		if(self != NULL && level.main_player_handler >= 1)
+		{
+			//--- stage 4 ---//
+			self thread player_stage_thread 4
+			if(level.main_player_handler_debug)
+				println "INFO[jv_mp_players::child_player_handler]: Player " local.debugnum " has entered stage 4."
+			self.stage = 4
+		}
+	}
+	if(level.main_player_handler_debug)
+		println "INFO[jv_mp_players::child_player_handler]: Child handler terminated for player " local.debugnum
+end
+
+/**
+Run all threads for the given player from the specified stage.
+
+integer stage: number of stage to run threads of.
+*/
+player_stage_thread local.stage:
+	for(local.numthread = 1; local.numthread <= level.stagethread[local.stage].size; local.numthread++)
+	{
+		local.thread = level.stagethread[local.stage][local.numthread]
+		local.script = level.stagethreadscript[local.stage][local.numthread]
+		if(local.thread != NIL && local.thread != 0)
+		{
+			if(level.main_player_handler_debug == 1)
+				println "INFO[jv_mp_players::player_stage_thread]: Running thread " local.thread " (stage " local.stage ")"
+			parm.player = self
+			self testthread local.script local.thread
+		}
+		else if(local.thread != 0)
+			println "WARNING[jv_mp_players::player_stage_thread]: Invalid thread definition [thread: " local.thread ", script: " local.script "] (stage " local.stage ")"
+	}
+end
+
+/**
+Resolves string stages to stage numbers. Internal use.
+
+string stage: stage to resolve
+*/
+resolve_stage local.stage:
+	local.prestage = local.stage
+	
+	switch(local.stage)
+	{
+		start:
+			local.stage = 1
+			break
+		prepare:
+			local.stage = 2
+			break
+		join:
+			local.stage = 3
+			break
+		death:
+			local.stage = 4
+	}
+	
+	if(level.main_player_handler_debug == 1 && local.prestage != local.stage)
+		println "INFO[jv_mp_players::resolve_stage]: Resolved stage " local.prestage " to stage " local.stage
+end local.stage
+
+/**
+Adds a stage thread for all players. This thread will be run 
+when a player enters the specified stage. Stages are:
+	start (1): 		player enters the game
+	prepare (2):	player joins a team
+	join (3):		player enters the game
+	death(4):		player dies -> goes to stage 3 again if respawn is enabled.
+
+Arguments are as follows:
+
+array scriptthread:	array defined as:
+	[1]: string script file.
+	[2]: string thread.
+string stage:		stage that should trigger this thread.
+boolean noresolve:	set to '1' to prevent stage resolving. Not recommended.
+*/
+add_stage_thread local.scriptthread local.stage local.noresolve:
+	// usage example: waitthread global/jv_mp_players::add_stage_thread "maps/dm/mymap.scr"::start prepare
+	
+	local.stage = waitthread resolve_stage local.stage
+
+	local.thread = local.scriptthread[2]
+	if(local.thread == NIL || local.thread == NULL)
+	{
+		println "ERROR[jv_mp_players::add_stage_thread]: Invalid thread: " local.thread " for stage " local.stage
+		end
+	}
+	
+	local.script = local.scriptthread[1]
+	if(local.script == NIL || local.script == NULL)
+	{
+		if(level.script != NIL)
+		{
+			println "WARNING[jv_mp_players::add_stage_thread]: Invalid script: " local.script " for stage " local.stage ", setting to level.script (" level.script ")."
+			local.script = level.script
+		}
+		else
+		{
+			println "ERROR[jv_mp_players::add_stage_thread]: Invalid script: " local.script " for stage " local.stage "."
+			end
+		}
+	}
+	
+	local.siz = level.stagethread[local.stage].size
+	
+	if(local.siz < 0) 
+		local.siz = 0
+		
+	level.stagethread[local.stage][local.siz + 1] = local.thread
+	level.stagethreadscript[local.stage][local.siz + 1] = local.script
+	
+	println "INFO[jv_mp_players::add_stage_thread]: Added stage thread " local.script "::" local.thread " for stage " local.stage
+	
+	// resolve
+	if(local.noresolve == NIL)
+	{
+		for(local.i = 1; local.i <= $player.size; local.i++)
+		{
+			local.player = $player[local.i]
+			if(local.player.stage != NIL)
+			{
+				parm.player = local.player
+				if(local.player.stage >= local.stage)
+				{
+					if(level.main_player_handler_debug == 1)
+						println "INFO[jv_mp_players::add_stage_thread]: Resolving thread " local.thread " (stage " local.stage ") for player ["	local.i "]."
+					local.player testthread local.script local.thread
+				}
+			}
+		}
+	}
+
+	if(level.main_player_handler_debug == 1)
+		waitthread debug_threads
+end
+
+/**
+Removes the specified thread from the given stage.
+
+array scriptthread:	script::thread array.
+string stage:		stage to remove thread from.
+*/
+clear_stage_thread local.scriptthread local.stage:
+	local.stage = waitthread resolve_stage local.stage
+
+	local.script = local.scriptthread[1]
+	if(local.script == NIL || local.script == NULL)
+	{
+		if(level.script != NIL)
+		{
+			println "WARNING[jv_mp_players::clear_stage_thread]: Invalid script: " local.script " for stage " local.stage ", trying level.script (" level.script ")."
+			local.script = level.script
+		}
+		else
+		{
+			println "ERROR[jv_mp_players::clear_stage_thread]: Invalid script: " local.script " for stage " local.stage "."
+			end
+		}
+	}
+	
+	local.thread = local.scriptthread[2]
+	if(local.thread == NIL || local.thread == NULL)
+	{
+		println "ERROR[jv_mp_players::clear_stage_thread]: Invalid thread: " local.thread " for stage " local.stage
+		end
+	}
+	
+	local.ok = 0
+	for(local.num = 1; local.num <= level.stagethread[local.stage].size; local.num++)
+	{
+		if(level.stagethread[local.stage][local.num] == local.thread)
+		{
+			if(level.stagethreadscript[local.stage][local.num] == local.script)
+			{
+				level.stagethread[local.stage][local.num] = 0
+				println "INFO[jv_mp_players::clear_stage_thread]: Successfully cleared thread " local.script "::" local.thread " for stage " local.stage
+				local.ok = 1
+				break
+			}
+		}
+	}
+	
+	if(local.ok == 0)
+		println "ERROR[jv_mp_players::clear_stage_thread]: Could not remove thread " local.script "::" local.thread " for stage " local.stage
+
+	if(level.main_player_handler_debug == 1)
+		waitthread debug_threads
+end
+
+/**
+Removes all threads from this stage.
+
+string stage: stage to remove threads from.
+*/
+clear_stage local.stage:
+	local.stage = waitthread resolve_stage local.stage
+
+	local.i = 0
+	for(local.num = 1; local.num <= level.stagethread[local.stage].size; local.num++)
+	{
+		level.stagethread[local.stage][local.num] = 0
+		local.i++
+	}
+	if(local.i > 0)
+		println "INFO[jv_mp_players::clear_stage]: Successfully cleared " local.i " threads at stage " local.stage
+	else
+		println "WARNING[jv_mp_players::clear_stage]: No threads found at stage " local.stage
+
+	if(level.main_player_handler_debug == 1)
+		waitthread debug_threads
+end
+
+/**
+Outputs all stage threads to console.
+*/
+debug_threads:
+	println " "
+	println "INFO: New stage thread array:"
+	println "======================="
+	for(local.st = 1; local.st <= 4; local.st++)
+	{
+		for(local.i = 1; local.i <= level.stagethread[local.st].size; local.i++)
+		{
+			if(level.stagethread[local.st][local.i] == 0)
+				println "[stage " local.st "]: (removed thread)"
+			else
+			println "[stage " local.st "]: " level.stagethreadscript[local.st][local.i] "::" level.stagethread[local.st][local.i]
+		}
+	}
+	println "======================="
+	println " "
+end
+
+/**
+Waits for the player to trigger 
+a $playerspawntrigger entity.
+Internal use.
+*/
+player_join_game:
+	local.trigger = spawn trigger_multiple
+	local.trigger setsize ( -16 -16 -16) (16 16 16)
+	local.trigger glue self
+	while(1)
+	{
+		local.trigger waittill trigger
+		if(parm.other == self)
+			break
+		waitframe
+	}
+	local.trigger remove
+end
+
+//=========================//
+// External Search Threads //
+//=========================//
+
+/**
+Returns the entities of the given array with 
+the given targetname.
+*/
+get_named_entities local.array local.targetname:
+	local.id = 1
+	for(local.num = 1; local.num <= local.array.size; local.num++)
+	{
+		local.ent = local.array[local.num]
+		if(local.ent)
+		{
+			if(local.ent.targetname == local.targetname)
+			{
+				local.new_array[local.id] = local.ent
+				local.id++
+			}
+		}
+	}
+	if(local.new_array == NIL)
+	{
+		local.new_array = makeArray
+		endArray
+	}
+end local.new_array
+
+/**
+Returns the entities from the array with the
+specified '$tag' key.
+*/
+get_tagged_entities local.array local.tagname:
+	local.id = 1
+	for(local.num = 1; local.num <= local.array.size; local.num++)
+	{
+		local.ent = local.array[local.num]
+		if(local.ent)
+		{
+			if(local.ent.tag == local.tagname)
+			{
+				local.new_array[local.id] = local.ent
+				local.id++
+			}
+		}
+	}
+	if(local.new_array == NIL)
+	{
+		local.new_array = makeArray
+		endArray
+	}
+end local.new_array
+
+/**
+Returns the entities from the array within 
+radius distance from the origin vector.
+*/
+get_area_entities local.array local.origin local.radius:
+	local.id = 1
+	for(local.num = 1; local.num <= local.array.size; local.num++)
+	{
+		local.ent = local.array[local.num]
+		if(local.ent)
+		{
+			if(vector_within local.ent.origin local.origin local.radius)
+			{
+				local.new_array[local.id] = local.ent
+				local.id++
+			}
+		}
+	}
+	if(local.new_array == NIL)
+	{
+		local.new_array = makeArray
+		endArray
+	}
+end local.new_array
+
+/**
+Returns the entities from the array touching
+the toucher entity.
+*/
+get_touching_entities local.array local.toucher:
+	local.id = 1
+	for(local.num = 1; local.num <= local.array.size; local.num++)
+	{
+		local.ent = local.array[local.num]
+		if(local.ent)
+		{
+			if(local.ent isTouching local.toucher)
+			{
+				local.new_array[local.id] = local.ent
+				local.id++
+			}
+		}
+	}
+	if(local.new_array == NIL)
+	{
+		local.new_array = makeArray
+		endArray
+	}
+end local.new_array
+
+/**
+Returns the entities from the array with 
+the specified dmteam.
+*/
+get_team_players local.array local.team:
+	local.id = 1
+	for(local.num = 1; local.num <= local.array.size; local.num++)
+	{
+		local.player = local.array[local.num]
+		if(local.player)
+		{
+			if(local.player.dmteam == local.team)
+			{
+				local.new_array[local.id] = local.player
+				local.id++
+			}
+		}
+	}
+	if(local.new_array == NIL)
+	{
+		local.new_array = makeArray
+		endArray
+	}
+end local.new_array
+
+/**
+Returns all players that are currently in the game.
+Doesn't return spectators.
+*/
+get_active_players local.array:
+	local.id = 1
+	for(local.num = 1; local.num <= local.array.size; local.num++)
+	{
+		local.player = local.array[local.num]
+		if(local.player)
+		{
+			if(local.player.ingame == 1)
+			{
+				local.new_array[local.id] = local.player
+				local.id++
+			}
+		}
+	}
+	if(local.new_array == NIL)
+	{
+		local.new_array = makeArray
+		endArray
+	}
+end local.new_array

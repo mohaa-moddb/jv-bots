@@ -1,0 +1,106 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Medkit Pick-up Behaviour.
+Only responds to medkits dropped by other bots.
+---------------------------------------------
+*/
+
+setup:
+	// no setup
+end
+
+/**
+Priority factors:
+	-current health
+	-distance
+	-sighttrace
+	-collision trace
+	-enemy
+	-distance to enemy
+This task can be performed in-combat.
+*/
+getpriority:
+	local.bestscore = 0
+	local.bestnode = NULL
+	if(self.enemy)
+		local.hasenemy = 1
+	else
+		local.hasenemy = 0
+	if(self.health < 100)
+	{
+		for(local.i = 1; local.i <= $health.size; local.i++)
+		{
+			local.medkit = $health[local.i]
+			local.score = waitthread evaluate local.medkit
+			if(local.score > local.bestscore)
+			{
+				local.bestnode = local.medkit
+				local.bestscore = local.score	
+			}
+		}
+	}
+	local.output = local.bestscore::local.bestnode::local.hasenemy
+end local.output
+
+evaluate local.parm local.onlyeval:
+	local.medkit = local.parm[1]
+	local.score = 0
+	if(self canmoveto local.medkit.origin && ((self.enemy == NULL && self cansee local.medkit) || (self.enemy != NULL && self cansee local.medkit 180 && vector_closer local.medkit.origin self.enemy.origin self.origin)))
+	{
+		local.weight = 100 - self.health
+		local.distance = vector_length(local.medkit.origin - self.origin)
+		local.time = level.time - local.medkit.time
+		local.score = 0.1 * (1024 / (local.distance + 1024)) + ((10 - local.time) / 10) * (local.weight / 100)
+	}
+end local.score
+
+action:
+	local.medkit = self.parm[1]
+	local.hasenemy = self.parm[2]
+	local.tg = local.medkit.targetname
+	self thread level.jvbot_modscript[debug]::debugmodifylight 32 blue
+
+	if(local.hasenemy)
+		self.nodeviate = 1
+		
+	self waitthread level.jvbot_main_script::action_go_to local.medkit 16
+
+	if(isAlive self)
+	{
+		self.nodeviate = 0
+		if(self.task == "health")
+			self.task = idle
+
+		self thread level.jvbot_modscript[debug]::debugmodifylight -32 blue
+	}
+end

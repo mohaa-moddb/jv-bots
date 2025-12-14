@@ -1,0 +1,62 @@
+/**
+Multiplayer Bot Sound Caches for MoH:AA
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+TIKI
+
+setup
+{
+	path models/fx/dummy
+	skelmodel dummy3.skd
+}
+
+init
+{
+	server
+	{
+	    classname ScriptModel
+		rendereffects +dontdraw
+		notsolid
+	}
+	client
+	{
+		settiki none
+		//General
+		aliascache rifle_whip1 sound/weapons/foley/PistolWhip1.wav soundparms 1.0 0.1 0.95 0.1 250 1000 auto loaded maps "obj dm"
+		aliascache rifle_whip2 sound/weapons/foley/PistolWhip2.wav soundparms 1.0 0.1 0.95 0.1 250 1000 auto loaded maps "obj dm"
+		aliascache rifle_hit1 sound/weapons/foley/PistolHit1.wav soundparms 1.5 0.0 0.95 0.1 250 1000 auto loaded maps "obj dm"
+		aliascache rifle_hit2 sound/weapons/foley/PistolHit2.wav soundparms 1.5 0.0 0.95 0.1 250 1000 auto loaded maps "obj dm"
+		aliascache rifle_hit3 sound/weapons/foley/PistolHit3.wav soundparms 1.5 0.0 0.95 0.1 250 1000 auto loaded maps "obj dm"
+	}
+}
+
+animations
+{
+	idle     dummy3.skc
+}

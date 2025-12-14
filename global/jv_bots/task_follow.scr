@@ -1,0 +1,182 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Following of Players Behaviour.
+
+No more than one bot follows a 
+particular player at a time.
+---------------------------------------------
+*/
+
+setup:
+	// no setup
+end
+
+/**
+Priority is only modified by distance.
+This task cannot be performed while in-combat.
+*/
+getpriority:
+	local.bestscore = 0
+	local.bestnode = NULL
+	if(self.enemy == NULL)
+	{
+		local.players = waitthread global/jv_mp_players.scr::get_active_players $player
+		local.players = waitthread global/jv_mp_players.scr::get_team_players local.players self.dmteam
+		
+		for(local.i = 1; local.i <= local.players.size; local.i++)
+		{
+			local.player = local.players[local.i]
+			local.score = waitthread evaluate local.player
+			if(local.score > local.bestscore)
+			{
+				local.bestnode = local.player
+				local.bestscore = local.score	
+			}
+		}
+	}
+	local.output = local.bestscore::local.bestnode
+end local.output
+
+evaluate local.parm local.onlyeval:
+	local.player = local.parm[1]
+	local.score = 0
+	if(local.player.nofollow != 1 && (local.onlyeval || local.player.hasbuddy != 1))
+	{
+		if(local.onlyeval || self cansee local.player 135)
+		{
+			local.distance = vector_length (self.origin - local.player.origin)
+			local.score = 1024 / (local.distance + 1024)
+		}
+	}
+end local.score
+
+action:
+	local.destination = self.parm[1]
+	// rather the same as the action_go_to thread, but checks whether the destination is alive
+	// and maintains a larger distance
+	if(local.destination.hasbuddy == 1)
+	{
+		self.task = "idle"
+		end
+	}
+	self thread level.jvbot_modscript[debug]::debugmodifylight 256 blue
+	local.destination.hasbuddy = 1
+	local.dest_point = spawn script_origin
+	local.fwd_point = spawn script_origin
+	local.leash = self.leash
+	local.mindist = self.mindist
+	self.mindist = 0
+	self.leash = 0
+	self thread follownotification local.destination
+	while(isAlive self && self.task == follow && isAlive local.destination && local.destination.ingame && self.dmteam == local.destination.dmteam)
+	{
+		while(isAlive self && self.task == follow && self.enemy != NULL && isAlive local.destination && local.destination.ingame && self.dmteam == local.destination.dmteam && !vector_within self.origin local.destination.origin 256)
+		{
+			self turnto local.fwd_point
+			local.fwd_point.origin = local.destination.origin + local.destination.forwardvector * 1024
+			wait 0.5
+		}
+			
+		if(isAlive self && self.task == follow && self.enemy == NULL && isAlive local.destination && local.destination.ingame && self.dmteam == local.destination.dmteam && !vector_within self.origin local.destination.origin 256)
+		{
+			local.dest_point.origin = local.destination.origin + local.destination.forwardvector * 256 + (0 0 32)
+			self turnto NULL
+			self runto local.dest_point
+	
+			while(isAlive self && self.task == follow && self.enemy == NULL && isAlive local.destination && self.dmteam == local.destination.dmteam && local.destination.ingame && !vector_within self.origin local.destination.origin 256)
+			{
+				local.dest_point.origin = local.destination.origin + local.destination.forwardvector * 256 + (0 0 32)
+				waitframe
+				wait level.jvbot_loopdelay
+			}
+				
+			if(isAlive self)
+			{
+				self runto NULL
+				self.leash = local.leash
+				self.mindist = local.mindist
+			}
+		}
+		waitframe
+	}
+	if(isAlive local.destination)
+		local.destination.hasbuddy = 0
+	if(isAlive self)
+	{
+		self thread level.jvbot_modscript[debug]::debugmodifylight -256 blue
+		if(self.task == "follow" && self.parm[1] == local.destination)
+			self.task = idle
+	}
+	local.dest_point remove
+	local.fwd_point remove
+end
+
+/**
+Tells the player he's being followed.
+*/
+follownotification local.destination:
+	while(isAlive self && self.task == follow && isAlive local.destination && self.parm[1] == local.destination)
+	{
+		while (isAlive self && self.task == follow && isAlive local.destination && self.parm[1] == local.destination && !(vector_within self local.destination 256 && local.destination cansee self))
+			wait 1
+		
+		if(isAlive self && self.task == follow && isAlive local.destination && self.parm[1] == local.destination && vector_within self local.destination 256 && local.destination cansee self)
+		{
+			self lookat local.destination
+			wait 0.1
+			if(self cansee local.destination)
+			{
+				// 3 phrases (bb, bd, be)
+				local.phrasenum = randomint 3 + 1
+				switch(local.phrasenum)
+				{
+					case 1:
+						local.phrase = bb
+						break
+					case 2:
+						local.phrase = bd
+						break
+					default:
+						local.phrase = be
+				}
+				self waitthread level.jvbot_main_script::say local.phrase
+				wait 1.2
+				if(isAlive self)
+					self lookat NULL
+				wait 10
+				wait (randomfloat 10)
+			}
+		}
+		wait 0.5
+	}
+end

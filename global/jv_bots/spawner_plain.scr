@@ -1,0 +1,109 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Spawner Script
+
+Initially adds bots to the game.
+---------------------------------------------
+*/
+
+/**
+Main thread, starts other threads.
+*/
+setup:
+	thread start
+end
+
+start:
+	local.forceadd = waitthread level.jvbot_main_script::getrankedvar 0 level.jvbot_forceaddbots "jvbot_forceaddbots" int 1 1
+	if(local.forceadd == 0)
+	{
+		// waittill there is at least one "teamed" player, so that the round doesn't end when the server is empty
+		println "INFO[spawner_dynamic::spawner]: Waiting for players..."
+		local.alliedplayers = waitthread global/jv_mp_players.scr::get_team_players $player allies
+		local.axisplayers = waitthread global/jv_mp_players.scr::get_team_players $player axis
+		while(group.terminate != 1 && local.alliedplayers.size <= 0 && local.axisplayers.size <= 0)
+		{
+			wait 0.5
+			local.alliedplayers = waitthread global/jv_mp_players.scr::get_team_players $player allies
+			local.axisplayers = waitthread global/jv_mp_players.scr::get_team_players $player axis
+		}
+	}
+	
+	local.alliesbots = waitthread level.jvbot_main_script::getrankedvar 0 level.alliesbots jvbot_forcenumalliesbots int 1 1
+	local.axisbots = waitthread level.jvbot_main_script::getrankedvar 0 level.axisbots jvbot_forcenumaxisbots int 1 1
+
+	if((local.alliesbots + local.axisbots) > 0)
+	{
+		thread allies local.alliesbots
+		thread axis local.axisbots
+	}
+	else
+		println "WARNING[spawner_plain::setup]: No bots requested using level.alliesbots or level.axisbots."
+end
+
+/**
+Spawns Allied bots.
+*/
+allies local.bots:
+	local.maxdelay = 2.0 //local.bots
+	for(local.i = 1; local.i <= local.bots; local.i++)
+	{
+		local.name = waitthread level.jvbot_modscript[libnames]::getname
+		waitthread level.jvbot_modscript[spawnhandler]::addbot local.name allies auto
+		wait (randomfloat 0.5)
+		wait 0.1
+		if(level.jvbot_jv_mp_ai_running == 0)
+			break
+	}
+end
+
+/**
+Spawns Axis bots.
+*/
+axis local.bots:
+	// spawn axis
+	local.maxdelay = 2.0 // local.bots
+	for(local.i = 1; local.i <= local.bots; local.i++)
+	{
+		local.name = waitthread level.jvbot_modscript[libnames]::getname
+		waitthread level.jvbot_modscript[spawnhandler]::addbot local.name axis auto
+		wait (randomfloat 0.5)
+		wait 0.1
+		if(level.jvbot_jv_mp_ai_running == 0)
+			break
+	}
+end
+
+shutdown:
+	// no shutdown needed
+end

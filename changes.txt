@@ -1,0 +1,110 @@
+====================
+Major improvements
+====================
+
+- Supports non-respawning bots (defaults to level.dmrespawning variable)
+- Number of bots now is controllable by jvbot_forcenumalliesbots and jvbot_forcenumaxisbots cvars
+- All spawners wait until there is at least one player in the game
+- Timelimit doesn't run out if a bomb is set
+- By default the number of bots will be decreased when new players join
+- Added a terminate round vote if all players are dead
+- Better distribution of bots over spawnpoints
+- Faster reactions
+- Bots now respond to pain
+- Made sure there is at least one attacking and one defending bot
+- Bots now operate in large squads
+- Camping bots run away if a bomb is going to blow (not very successful mostly)
+- Improved mg-42 targeting
+- Removed bot messages for 'preparing for deployment' and 'entered the battle'
+- Team kill messages are now in yellow
+- Added special_ladder2.scr for smoother ladder descending (requires changes in map)
+
+====================
+Full change log
+====================
+
+--- revision 5 ---
+- Removed redundant set_score thread in jv_mp_ai.scr
+- Fixed minor issue in new move code causing errors at startup
+- Bomb order now is randomized for more gameplay variance
+- Fixed blockjoin code for non-respawning matches
+- Cleaned-up voting code
+
+--- revision 4 ---
+- Fixed minor shutdown issue in lib_bomb.scr
+- Fixed minor issues causing a load of warnings in both spawners
+- Added a delay before terminate round voting comes up
+- Used timing instead of waittill animdone event in special_ladder.scr, like special_ladder2.scr does
+
+--- revision 3 ---
+- cleaned-up all files
+- level.jvbot_skill and level.jvbot_showavatar can now be set in the map script
+- default skill level now is 3
+- decreased 'splash screen' frequency
+- desynced bomb and task handlers to smooth out their performance hit over multiple frames
+- bomb controllers now use a more direct and stable way to retrieve attacking / defending bots
+- removed void subtask kicks again
+- improved flee code for critical bombs
+- console status command improved for verbose mode
+- console addbot command now overrules level.jvbot_g_allowspawn variable
+- mg_control thread now warns if gun range exceeds farplane distance
+- added some bot names
+- weapon priority modifications:
+  + increased garand priority
+  + decreased thompson priority
+  + increased mauser (non-sniper) priority
+  + decreased mp40 priority
+  + decreased stg44 priority
+- removed firedelay weapon info again
+- new getspawnposition thread in spawnhandler_default.scr prevents multiple bot spawns at one spawn position within 2 seconds if not necessary
+- splitted new ladder thread in special_ladder (old) and special_ladder2 (new)
+- improved mg42 evaluate thread to not drop priority when using gun
+
+--- revision 2 ---
+- Changed version number to 1.1 in all /jv_bots files
+- test version attack.scr
+- Added level.team_bombs_planted variable for both teams and level.bombs_planted in general.
+- Made bomb pulse model notsolid
+- Bots can't plant bombs if the round hasn't started
+- level.jvbot_homedir can now be changed by cvar jvbot_homedir
+- added lib_game library
+- moved kick all bots code from lib_console to main script
+- level.jvbot_respawning now defaults to level.dmrespawning
+- adddefaultlib now casts to cvars
+- added 'evaluate' procedure for all tasks
+- improved all move threads
+- fixed a bug in lib_bomb that causes planter to drop task
+- number of escorting bots now is unlimited
+- now only does an ignoredefuse if the bomb is critical
+- removed ingoreplant subtask
+- modified priority formulas for all tasks
+- camping bots run away if a bomb is going to blow
+- escorting bots now run to enemy of planter / defuser
+- increased amount of information that can be retrieved from verbose status console command
+- removed bot messages for 'preparing for deployment' and 'entered the battle'
+- targeting thread in lib_machinegun can now be called externally (doesn't require a gunner)
+- added canshoot function in lib_machinegun for task evaluation
+- capped spotter / gunner panic attack to the machinegun's range
+- actor targeting now is performed based on the target's head
+- added a couple of bot names
+- all spawners wait until there is at least one player in the game
+- bot spawning is performed much faster
+- team kill messages are now in yellow
+- improved sneakshots
+- task_attackbomb and task_defendbomb now kick bots back to idle if no valid subtask is defined within three loops
+- bots can now abort planting and defusing if under fire
+- campers respond to pain
+- added special_ladder2.scr for smoother ladder descending.
+- added spawner_dynamic.scr
+- added anim/pain.scr
+- renamed handler_default.scr to taskhandler_default.scr
+- removed lib_timelimit.scr (now handled by lib_game.scr)
+
+--- revision 1 ---
+- Changed Freebrief URL to http://www.planetmedal.com/freebrief/ in all files.
+- Added move interrupt code (beta)
+- Modified and added some bot names
+- Improved timelimit code
+- Fixed zero farplane vision distance bug
+- Ability to disable bot respawning using level.jvbot_respawning
+- Added sneakshots (beta)

@@ -1,0 +1,141 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Weapons Library
+---------------------------------------------
+*/
+
+/**
+You may set a custom weapon priority in your map's script.
+*/
+setup:	
+	// setup default weapon priorities
+	// rifle is more popular now that non-respawning is possible
+	waitthread setweaponpriority "m1 garand" 20
+	waitthread setweaponpriority "springfield '03 sniper" 20
+	waitthread setweaponpriority "thompson" 30
+	waitthread setweaponpriority "bar" 25
+	waitthread setweaponpriority "shotgun" 5
+	waitthread setweaponpriority "high standard" 0
+	waitthread setweaponpriority "colt 45" 0
+	waitthread setweaponpriority "bazooka" 0
+	waitthread setweaponpriority "mauser kar 98k" 10
+	waitthread setweaponpriority "mauser kar 98d sniper" 20
+	waitthread setweaponpriority "mp40" 28
+	waitthread setweaponpriority "stg44" 32
+	waitthread setweaponpriority "walter p38" 0
+	waitthread setweaponpriority "panzerschrek" 0
+end
+
+setweaponpriority local.weapon local.default:
+	if(level.jvbot_weapon_priority[local.weapon] == NIL)
+		level.jvbot_weapon_priority[local.weapon] = local.default
+	else if(level.jvbot_verbose && level.jvbot_weapon_priority[local.weapon] != local.default)
+		println "INFO[lib_weapon::setweaponpriority]: Using custom priority (" level.jvbot_weapon_priority[local.weapon] ") for weapon " local.weapon "."
+end
+
+shutdown:
+end
+
+/**
+Returns an array to be converted into level.botweaponinfo.
+
+Output array components are as follows:
+	[1] string gun: 		weapon to use
+	[2] float accuracy: 	base accuracy
+	[3] boolean movecloser:	whether or not to move closer when in long range attack.
+	[4] float sight:		bot preferred vision distance, may be modified 
+							depending on farplane density.
+
+string team: 	can be allies or axis.
+string model: 	model used by bot.
+string name:	bot's name.
+*/
+getweapon local.team local.model local.name:
+	if(local.team == "allies")
+	{
+		local.gunlist = "m1 garand"::"springfield '03 sniper"::"thompson"::"bar"::"shotgun"::"high standard"::"colt 45"::"bazooka"
+		local.sightlist = 3072::4096::1024::2048::512::768::512::1024
+	}
+	else
+	{
+		local.gunlist = "mauser kar 98k"::"mauser kar 98d sniper"::"mp40"::"stg44"::"shotgun"::"walter p38"::"panzerschrek"
+		local.sightlist = 3072::4096::1024::2048::512::512::1024
+	}
+	local.total = 0
+	for(local.i = 1; local.i <= local.gunlist.size; local.i++)
+		local.prioritylist[local.i] = level.jvbot_weapon_priority[local.gunlist[local.i]]
+
+	for(local.i = 1; local.i <= local.gunlist.size; local.i++)
+		local.total+=local.prioritylist[local.i]
+	
+	local.gunindex = randomint local.total + 1
+	
+	local.lastnum = 0
+	for(local.i = 1; local.i <= local.gunlist.size; local.i++)
+	{
+		local.num = local.lastnum + local.prioritylist[local.i] // cumulate
+		if(local.gunindex <= local.num)
+		{
+			local.gunnum = local.i
+			break
+		}
+		local.lastnum = local.num
+	}
+	local.gun = local.gunlist[local.gunnum]
+	local.sight = local.sightlist[local.gunnum]
+end (local.gun::local.sight)
+
+/**
+Sets the weapon characteristics for the bot.
+
+array weaponinfo:	custom format as returned from getweapon.
+*/
+setweapon local.weaponinfo:
+	local.gun = local.weaponinfo[1]
+	local.sight = local.weaponinfo[2]
+
+	self.ammo_grenade = randomint 5
+	self weapon local.gun
+	self.accuracy = 50 // placeholder value
+
+	if($world.farplane != 0)
+	{
+		local.maxsight = 0.826 * $world.farplane
+		if(local.sight > local.maxsight)
+			self.sight = local.maxsight
+		else
+			self.sight = local.sight
+	}
+	else
+		self.sight = local.sight
+end

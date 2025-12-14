@@ -1,0 +1,212 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/*
+---------------------------------------------
+Machinegunner and Spotter Behaviour.
+---------------------------------------------
+*/
+
+/*
+General setup.
+*/
+setup:
+	waitthread level.jvbot_main_script::addroute mg_node 1
+end
+
+/*
+Priority factors:
+	-distance
+	-current gun usage
+	-gun #weight
+	-enemy proximity
+This task can be performed in-combat.
+*/
+getpriority:
+	local.bestscore = 0
+	local.bestnode = NULL
+	if(self.enemy)
+		local.hasenemy = 1
+	for(local.i = 1; local.i <= $mg.size; local.i++)
+	{
+		local.node = $mg[local.i]
+		local.score = waitthread evaluate (local.node::local.hasenemy)
+		if(local.score > local.bestscore)
+		{
+			local.bestnode = local.node
+			local.bestscore = local.score
+		}
+	}
+	local.output = local.bestscore::local.bestnode::local.hasenemy
+end local.output
+
+evaluate local.parm local.onlyeval:
+	local.node = local.parm[1]
+	local.hasenemy = local.parm[2]
+	if(local.node.team_allowed[self.dmteam] == 1)
+	{
+		local.playercheck = local.node waitthread level.jvbot_modscript[libmachinegun]::mgplayercheck
+		if((local.node.hasgunner == 0 || local.node.gunner == self ) && local.playercheck == -1)
+			local.weight = 1
+		else
+		{
+			if(local.node.spotter_allowed == 0)
+				local.weight = -1
+			else
+			{
+				if(local.node.hasspotter == 1 && local.node.spotter != self)
+					local.weight = -1
+				else
+				{
+					if(local.playercheck == -1)
+					{
+						if(local.node.gunner.dmteam == self.dmteam && local.node.gunner != self)
+							local.weight = 0.5
+						else
+							local.weight = -1
+					}
+					else
+					{
+						if(local.playercheck.dmteam == self.dmteam)
+							local.weight = 0.5
+						else
+							local.weight = -1
+					}
+				}
+			}
+		}
+	}
+	else
+		local.weight = -1
+	
+	if(self.task != machinegun)
+		local.runnerweight = 1 / (local.node.runners + 1)
+	else
+		local.runnerweight = 1
+	
+	if(local.hasenemy == 0)
+		local.stateweight = 1
+	else if(self.enemy)
+	{
+		// use our new canshoot thread for this purpose
+		local.head = self.enemy gettagposition "Bip01 Head"
+		local.canshoot = local.node waitthread level.jvbot_modscript[libmachinegun]::canshoot local.head 0 0
+		local.stateweight = 2 * local.canshoot
+	}
+	else
+		local.stateweight = 1
+	
+	// get the number hitable targets
+	// CPU intensive
+	// bypass with $mg.nopretrace = 1
+	if(local.node.nopretrace != 1 || local.onlyeval)
+		local.targets = local.node waitthread level.jvbot_modscript[libmachinegun]::gethitabletargets self.dmteam
+	else
+		local.targets = 1 // assume there's one target (funky behaviour)
+		
+	local.distance = vector_length (self.origin - local.node.origin)
+	local.score = 0.1 * (1024 / (local.distance + 1024)) + local.targets * local.weight * local.node.weight * local.runnerweight * local.stateweight
+end local.score
+
+/**
+Machinegun action.
+*/
+action:
+	self thread level.jvbot_modscript[debug]::debugmodifylight 64 red
+	local.gun = self.parm[1]
+	local.hasenemy = self.parm[2]
+	local.gun.runners++
+	self.nodeviate = local.hasenemy
+	self waitthread level.jvbot_main_script::action_go_to_routed local.gun.node
+	if !(isAlive self && self.task == "machinegun" && self.parm[1] == local.gun)
+	{
+		local.gun.runners--
+		self.nodeviate = 0
+		end
+	}
+	// can be spotter or gunner
+	self.enableEnemy = 0
+	self.avoidplayer = 0
+	self.movedoneradius = 1
+	local.interval = self.interval
+	self.interval = 0
+	while(isAlive self && self.task == "machinegun")
+	{
+		local.playergunner = local.gun waitthread level.jvbot_modscript[libmachinegun]::mgplayercheck
+		// returns -1 for no gunner
+		if(local.gun.hasgunner == 0 && local.playergunner == -1)
+		{
+			local.gun.hasgunner = 1
+			local.gun.gunner = self
+			self.notask = 1
+			self waitthread level.jvbot_modscript[libmachinegun]::mggunnersetup local.gun
+			self.notask = 0
+			while(isAlive self && self.task == "machinegun" && self.turret == local.gun)
+			{
+				waitframe
+				wait level.jvbot_loopdelay
+			}
+			local.gun.hasgunner = 0
+			if(isAlive self)
+				self waitthread level.jvbot_modscript[libmachinegun]::mggunnerrestore
+		}
+		else if(local.gun.hasspotter == 0 && local.gun.spotter_allowed == 1 && ((local.playergunner == -1 && local.gun.gunner.dmteam == self.dmteam) || (local.playergunner != -1 && local.playergunner.dmteam == self.dmteam)))
+		{
+			local.gun.hasspotter = 1
+			local.gun.spotter = self
+			self.notask = 1
+			self waitthread level.jvbot_modscript[libmachinegun]::mgspottersetup local.gun
+			self.notask = 0
+			while(isAlive self && self.task == "machinegun" && (local.gun.hasgunner == 1 || local.playergunner != -1))
+			{
+				local.playergunner = local.gun waitthread level.jvbot_modscript[libmachinegun]::mgplayercheck
+				waitframe
+				wait level.jvbot_loopdelay
+			}
+			local.gun.hasspotter = 0
+			if(isAlive self)
+				self waitthread level.jvbot_modscript[libmachinegun]::mgspotterrestore
+		}
+		else
+			// fall out of machinegunner behaviour
+			self.task = "idle"
+		waitframe
+	}
+	if(isAlive self)
+	{
+		self.enableEnemy = 1
+		self.avoidplayer = 1
+		self.movedoneradius = 0
+		self.interval = local.interval
+		self.nodeviate = 0
+		self thread level.jvbot_modscript[debug]::debugmodifylight -64 red
+	}
+	local.gun.runners--
+end

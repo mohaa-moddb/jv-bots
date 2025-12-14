@@ -1,0 +1,146 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Bot Name Library
+---------------------------------------------
+*/
+
+setup:
+	// no setup
+end
+
+shutdown:
+	// no shutdown
+end
+
+/**
+Returns a random name.
+*/
+getname:	
+	local.normalname = waitthread getnormalname
+	local.prefix = waitthread level.jvbot_main_script::getrankedvar "[BoT]" level.jvbot_prefix jvbot_prefix string 1
+	if(local.prefix == "none" || local.prefix == "NULL")
+		local.prefix = ""
+	local.rank = waitthread getrank
+	local.fest = waitthread getfest
+	local.fullname = local.prefix + local.fest[1] + local.rank + local.normalname + local.fest[2]
+end local.fullname
+
+/**
+Returns any of the regular names.
+*/
+getnormalname:
+	local.names[1] = UnnamedSoldier::Dude::Master::Grande::KillErInStinct::"FraGMeister"::Annihilator::"Roster"
+	local.names[2] = "T3rmin4t0r"::"BradWurst"::Gustav::Ranger::Machine::"The System"::Terminator::"Click 'n' Kill"
+	local.names[3] = "H4X0R"::"La Resistance"::Mike::ATTACKER::"E4gle"::"The Matrix"::"Pusher Bot"::ChainReactor
+	local.names[4] = "type:609462"::BeZeRk::PanicAttack::PicnicAttack::Howitzer::Wolf::"Shover Bot"::Fusion::Delirious
+	local.names[5] = Winters::Malarkey::Guarnere::Ryan::Miller::Toye::Powell::Churchill::"Larry Probst"::"Rookie One"::Futile
+	local.names[6] = crAckmAchinE::SCREAM::OiLSplash::"Mech. Inf."::AIMBOT::Vodka::Fragoholic::Tanker::"Mortar"::"I will respawn"
+	local.names[7] = "Sniper"::"SniperSoldier"::"SuperSniper"::"sniper"::SniperMan::Gotcha::Tank::"Panzerkraftwagen"
+	local.names[8] = "HeadShot"::Iron::Bull::MagiC::Blade::Cannon::"n00b"::"C4tchM3!fUC4n"::"Oil Tanker"::"Striker"
+	local.names[9] = "Hoffmann"::"Hossmann"::"Neural Noise"::"U're DEAD"::"Industrious"::"Legacy"::Debris::Junk
+	local.names[10]= "Jackson"::"JetBot"::"K.I.A."::"M.I.A"::"Killing In Action"::UndeadSoldier::Robocop::"Toasted"
+	local.names[11] = "Detonator"::"Afterburner"::"Mad Max"::"Corn Flakes Daemon"::"MaxPayne"::Basher::Trogdor::TopGun
+	local.names[12] = "Iron Giant"::"T1000"::"Deathmachine"::"AIMEE"::"Dalek"::"TODO"::"FixMe"::"Smart Boy"::"Little Boy"
+	// special thanks to:
+	local.names[12]= "jv_map"::"Surgeon"::"mohaa_rox"::"Innkeeper"::"Death"::"Coublacka"::"MPowell1944"::Voxel::"small_sumo"
+	// top 10 .map and TMT posters (and a few others):
+	local.names[13] = "Yarik"::"Bjarne BZR"::"kdjaC"::"nuggets"::"shifty"::"tltrude"::"Wacko"::"Balr14"::"FlipSide"
+	local.names[14] = "Lay-Zee"::"WarCry"::"scorpio Midget"::"sputnik"::"M!st@been"::tritone::"TheStorm"::"BIG_SUMO"
+	// bot pioneers :) (sorry if I forgot someone)
+	local.names[15] = "bodybagger"::"Oddball_Woof"::"Bono_estente"::"Magus CPD Ozzy"::"ALienX"
+	
+	local.tries = 0
+	while(1)
+	{
+		local.namenum = randomint local.names.size + 1
+		local.namelist = local.names[local.namenum]
+		local.num = randomint local.namelist.size + 1
+		local.name = local.namelist[local.num]
+		local.tries++
+		if !(level.jvbot_name_used[local.namenum][local.num])
+		{
+			level.jvbot_name_used[local.namenum][local.num] = 1
+			break
+		}
+		else if(local.tries >= 3)
+		{
+			println "WARNING[lib_names::getnormalname]: Duplicate base name: " local.name
+			break
+		}
+	}
+end local.name
+
+/**
+Returns a random rank or no rank.
+*/
+getrank:
+	local.ranks[1] = "Private "::"Pvt. "::"Pfc. "::"Corporal "::"Cpl. "::"Sergeant "::"Sgt. "::"Sfc. "
+	local.ranks[2] = "Lieutenant "::"Lt. "::"1st Lt. "::"2nd Lt. "::"Captain "::"Capt. "::"Master "
+	local.ranks[3] = "Lt. Col. "::"Major "::"Colonel "::"General "::"Commander "::"Dr. "::"Pro "
+	local.ranks[4] = "Officer "::"1st Lieutenant "::"2nd Lieutenant "::"Mr. "::"Sir "::"Newbie "::"Automatic "
+	local.ranksnum = randomint (local.ranks.size * 2) + 1
+	if(local.ranksnum > local.ranks.size)
+		end ""
+	local.rank = local.ranks[local.ranksnum]
+	local.ranknum = randomint local.rank.size + 1
+	local.rankname = local.rank[local.ranknum]
+end local.rankname
+
+/**
+Returns frenzy.
+*/
+getfest:
+	local.fest[1] = "***"::"***"
+	local.fest[2] = "-="::"=-"
+	local.fest[3] = "---"::"---"
+	local.fest[4] = "-{"::"}-"
+	local.fest[5] = "..::"::"::.."
+	local.fest[6] = ".:"::":."
+	local.fest[7] = "<<"::">>"
+	local.fest[8] = ">>"::"<<"
+	local.fest[9] = "="::"="
+	local.fest[10] = "-"::"-"
+	local.fest[11] = "==="::"==="
+	local.fest[12] = "=-="::"=-="
+	local.fest[13] = "+"::"+"
+	local.fest[14] = "~"::"~"
+	local.fest[15] = "~~"::"~~"
+	local.fest[16] = ""::"!"
+	local.fest[17] = "<--"::"-->"
+	local.fest[18] = "-->"::"<--"
+	local.fest[19] = "{"::"}"
+	local.fest[16] = ""::" DeLuxe"
+	local.festnum = randomint (local.fest.size * 4) + 1 // 'small' fest chance
+	if(local.festnum > local.fest.size)
+		end (""::"") // no fest
+end (local.fest[local.festnum])

@@ -1,0 +1,110 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Debug Library.
+
+For debug purposes only.
+---------------------------------------------
+*/
+
+/**
+Spawns a debug light on the supplied model.
+*/
+debughighlight:
+	if(level.debug_light == 1)
+	{
+		self light 0 0 0 64
+		self thread debugactuallightred
+		self thread debugactuallightgreen
+		self thread debugactuallightblue
+	}
+end
+
+/**
+Modifies the debug light of the given model.
+
+float mod: 		intensity modifier value (-256 up to 256).
+string color:	'red', 'green' or 'blue'.
+*/
+debugmodifylight local.mod local.color:
+	if(level.debug_light == 1)
+		self.highlight[local.color]+=local.mod
+end
+
+/**
+Red lighting thread. Internal use.
+*/
+debugactuallightred:
+	if(self.highlight[red] == NIL)
+		self.highlight[red] = 0
+	while(isAlive self)
+	{
+		self lightRed self.highlight[red]
+		local.light = self.highlight[red]
+		while(isAlive self && self.highlight[red] == local.light)
+			wait 0.5
+		waitframe
+	}
+	self lightoff
+end
+
+/**
+Green lighting thread. Internal use.
+*/
+debugactuallightgreen:
+	if(self.highlight[green] == NIL)
+		self.highlight[green] = 0
+	while(isAlive self)
+	{
+		self lightGreen self.highlight[green]
+		local.light = self.highlight[green]
+		while(isAlive self && self.highlight[green] == local.light)
+			wait 0.5
+		waitframe
+	}
+end
+
+/**
+Blue lighting thread. Internal use.
+*/
+debugactuallightblue:
+	if(self.highlight[blue] == NIL)
+		self.highlight[blue] = 0
+	while(isAlive self)
+	{
+		self lightBlue self.highlight[blue]
+		local.light = self.highlight[blue]
+		while(isAlive self && self.highlight[blue] == local.light)
+			wait 0.5
+		waitframe
+	}
+end

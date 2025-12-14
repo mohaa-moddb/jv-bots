@@ -1,0 +1,488 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Console Commands
+---------------------------------------------
+*/
+
+/**
+Main thread, keeps running even when bot 
+script shuts down to allow a restart.
+*/
+main:
+	// console based commands
+	if(level.jvbot_lib_console_running == 1)
+		end
+
+	local.tv_info = "bot::libconsole"
+
+	level.jvbot_lib_console_running = 1
+	
+	setcvar "jvbot_addbot_spawn" ""
+	setcvar "jvbot_kickbot_id" ""
+	setcvar "jvbot_kickbot_team" ""
+	setcvar "jvbot_kickall" ""
+	setcvar "jvbot_status" ""
+	setcvar "jvbot_restart" ""
+	setcvar "jvbot_shutdown" ""
+
+	while(1)
+	{
+		waitthread avatarcontrol
+		waitthread forcemodelscontrol
+		waitthread skillcontrol
+		waitthread level.jvbot_main_script::setloopdelay
+		waitthread commandcontrol
+		setcvar "jvbot_version" level.jvbot_version
+		setcvar "jvbot_running" level.jvbot_jv_mp_ai_running
+		wait 0.5
+	}
+	println "INFO[lib_console::main]: Bot console halted."
+	level.jvbot_lib_console_running = 0
+end
+
+avatarcontrol:
+	local.newavatar = getcvar "jvbot_showavatar"
+	local.newavatar_int = int(local.newavatar)
+	if(local.newavatar_int != level.jvbot_showavatar)
+	{
+		if(local.newavatar == "1")
+		{
+			level.jvbot_showavatar = local.newavatar_int
+			waitthread showavatars
+		}
+		else if(local.newavatar == "0")
+		{
+			level.jvbot_showavatar = local.newavatar_int
+			waitthread hideavatars
+		}
+		else
+			setcvar "jvbot_showavatar" level.jvbot_showavatar
+	}
+end
+
+forcemodelscontrol:
+	local.newforcemodels = getcvar "jvbot_forcemodels"
+	local.newforcemodels_int = int(local.newforcemodels)
+	if(local.newforcemodels_int != level.jvbot_forcemodels)
+	{
+		if(local.newforcemodels != "")
+		{
+			if(local.newforcemodels_int == 0)
+			{
+				println "INFO[lib_console::main]: Server-side force bot models disabled."
+				level.jvbot_forcemodels = 0
+				setcvar "jvbot_forcemodels" "0"
+			}
+			else if(local.newforcemodels_int == 1)
+			{
+				print "INFO[lib_console::main]: Server-side force bot models enabled"
+				if(level.jvbot_verbose)
+				 print " (allies: " level.jvbot_alliespreset[1] " axis: " level.jvbot_axispreset[1] ")"
+				println "."
+				level.jvbot_forcemodels = 1
+				setcvar "jvbot_forcemodels" "1"
+			}
+		}
+		else
+			setcvar "jvbot_forcemodels" level.jvbot_forcemodels
+	}
+end
+
+skillcontrol:
+	local.newbotskill = getcvar "jvbot_skill"
+	local.newbotskill_int = int(local.newbotskill)
+	if(local.newbotskill_int != level.jvbot_skill)
+	{
+		switch(local.newbotskill_int)
+		{
+			case 1:
+				println "INFO[lib_console::main]: Switched bot skill to 1 (easy)"
+				level.jvbot_skill = 1
+				break
+			case 2:
+				println "INFO[lib_console::main]: Switched bot skill to 2 (default)"
+				level.jvbot_skill = 2
+				break
+			case 3:
+				println "INFO[lib_console::main]: Switched bot skill to 3 (hard)"
+				level.jvbot_skill = 3
+				break
+			case 4:
+				println "INFO[lib_console::main]: Switched bot skill to 4 (unfair)"
+				level.jvbot_skill = 4
+				break
+			default:
+				println "ERROR[lib_console::main]: Invalid skill level: " local.newbotskill
+		}	
+		setcvar "jvbot_skill" level.jvbot_skill
+	}
+end
+
+commandcontrol:
+	local.addbot_spawn = int(getcvar(jvbot_addbot_spawn))
+	if(local.addbot_spawn > 0)
+	{
+		waitthread addbot local.addbot_spawn
+		setcvar "jvbot_addbot_spawn" ""
+		setcvar "jvbot_addbot_name" ""
+		setcvar "jvbot_addbot_team" ""
+	}
+	
+	local.kickbot_slot = int(getcvar(jvbot_kickbot_id))
+	if(local.kickbot_slot > 0)
+	{
+		waitthread kickbot local.kickbot_slot
+		setcvar "jvbot_kickbot_id" ""
+	}
+	local.kickbot_team = getcvar(jvbot_kickbot_team)
+	if(local.kickbot_team == "allies" || local.kickbot_team == "axis")
+	{
+		waitthread kickbot_team local.kickbot_team
+		setcvar "jvbot_kickbot_team" ""
+	}
+	
+	local.kick_all = getcvar(jvbot_kickall)
+	if(local.kick_all != "")
+	{
+		waitthread kickall_notify
+		setcvar "jvbot_kickall" ""
+	}
+	
+	local.botstatus = getcvar(jvbot_status)
+	if(local.botstatus != "")
+	{
+		waitthread status
+		setcvar "jvbot_status" ""
+	}
+	
+	local.botrestart = getcvar(jvbot_restart)
+	if(local.botrestart != "")
+	{
+		waitthread restart
+		setcvar "jvbot_restart" ""
+	}
+	
+	local.botshutdown = getcvar(jvbot_shutdown)
+	if(local.botshutdown != "")
+	{
+		waitthread shutdown
+		setcvar "jvbot_shutdown" ""
+	}
+end
+
+/**
+Shows all bot head icons.
+*/
+showavatars:
+	if(level.botlastid != NIL)
+	{
+		for(local.i = 1; local.i <= level.botlastid; local.i++)
+		{
+			local.bot = level.actualbots[local.i]
+			if(isAlive local.bot)
+			{
+				local.avatar = spawn ("models/hud/" + local.bot.dmteam + ".tik")
+				local.avatar attach local.bot "Bip01 Neck"
+				local.bot.headicon = local.avatar
+			}
+		}
+	}
+	else
+		println "ERROR[lib_console::showavatars]: Bot script not running."
+end
+
+/**
+Hides all bot head icons.
+*/
+hideavatars:
+	if(level.botlastid != NIL)
+	{
+		for(local.i = 1; local.i <= level.botlastid; local.i++)
+		{
+			local.bot = level.actualbots[local.i]
+			if(local.bot.headicon)
+				local.bot.headicon remove
+		}
+	}
+	else
+		println "ERROR[lib_console::showavatars]: Bot script not running."
+end
+
+/**
+Restarts the bot script.
+*/
+restart:
+	if(level.jvbot_jv_mp_ai_running == 1)
+	{
+		println "INFO[lib_console::restart]: Restarting bot system"
+		waitthread shutdown
+		println "INFO[lib_console::restart]: Restarting bots in 1 second..."
+		wait 1
+	}
+	println "INFO[lib_console::restart]: Starting global script"
+	waitthread level.jvbot_main_script::startup
+	println "INFO[lib_console::restart]: Bot restart completed"
+end
+
+/**
+Shuts down the bot system.
+*/
+shutdown:
+	if(level.jvbot_jv_mp_ai_running == 1)
+	{
+		println "INFO[lib_console::shutdown]: Shutting down bot system"
+		waitthread level.jvbot_main_script::disable
+		println "INFO[lib_console::shutdown]: Shutdown completed"
+	}
+	else
+		println "ERROR[lib_console::shutdown]: Bot script not running."
+end
+
+/**
+Shows bot status.
+*/
+status:
+	if(level.botnum == NIL)
+	{
+		println "ERROR[lib_console::status]: Bot array is not set."
+		end
+	}
+
+	println " "
+	print " #  team state	name "
+	if(level.jvbot_verbose)
+		println "		(task::subtask) [spawner] $targetname <thinkstate>"
+	else
+		println "		(task) [spawner]"
+	println "--------------------------------------------------------------------"
+	for(local.i = 1; local.i <= level.botnum; local.i++)
+	{
+		if(local.i < 10)
+			local.num = ("  " + local.i)
+		else
+			local.num = local.i
+
+		if(level.botstate[local.i] == active)
+		{
+			local.task = level.botspawn[local.i].task
+			if(level.jvbot_verbose)
+			{
+				if(level.botspawn[local.i].subtask == NIL)
+					local.subtask = "void"
+				else
+					local.subtask = level.botspawn[local.i].subtask
+				if(level.botspawn[local.i].notask == 1)
+					local.notask = "-notask-"
+				else
+					local.notask = ""
+				if(level.botspawn[local.i].parm[1] != NIL && level.botspawn[local.i].parm[1])
+				{
+					if(level.botspawn[local.i].parm[1].target != "")
+						local.taskinfo[1] = string level.botspawn[local.i].parm[1] + "(" + level.botspawn[local.i].parm[1].target + ")"
+					else
+						local.taskinfo[1] = string level.botspawn[local.i].parm[1]
+				}
+				else
+					local.taskinfo[1] = "none"
+				if(level.botspawn[local.i].parm[2] != NIL && level.botspawn[local.i].parm[2])
+				{
+					if(level.botspawn[local.i].parm[2].target != "")
+						local.taskinfo[2] = string level.botspawn[local.i].parm[2] + "(" + level.botspawn[local.i].parm[2].target + ")"
+					else
+						local.taskinfo[2] = string level.botspawn[local.i].parm[2]
+				}
+				else
+					local.taskinfo[2] = "none"
+				local.task = (level.botspawn[local.i].task + "::" + local.subtask + "|" + local.taskinfo[1] + "|" + local.taskinfo[2] + local.notask)
+			}
+		}
+		else
+			local.task = "none"
+	
+		if(level.botenabled[local.i] == 1)
+		{
+			if(level.botteam[local.i] == allies)
+				local.team = allies
+			else if(level.botteam[local.i] == axis)
+				local.team = "axis  "
+			else
+				local.team = "(none)"
+				
+			if(level.jvbot_verbose)
+			{
+				if(level.botspawn[local.i])
+				{
+					local.targetname = ("$" + level.botspawn[local.i].targetname)
+					if(isAlive level.botspawn[local.i])
+						local.thinkstate = ("<" + level.botspawn[local.i].thinkstate + ">")
+					else
+						local.thinkstate = "(n/a)"
+				}
+				else
+				{
+					local.targetname = "(n/a)"
+					local.thinkstate = "(n/a)"
+				}
+			}
+			else
+			{
+				local.targetname = ""
+				local.thinkstate = ""
+			}
+			println local.num " " local.team " " level.botstate[local.i] " " level.botname[local.i] " (" local.task ") [" level.botspawner[local.i] "] " local.targetname " " local.thinkstate
+		}
+	}
+	println "--------------------------------------------------------------------"
+	println " "
+end
+
+/**
+Spawn the given number of bots according to cvars:
+	cvar jvbot_addbot_team: team of new bots.
+	cvar jvbot_addbot_name: name of new bot when spawning only one.
+
+integer addbot_spawn: number of bots to spawn.
+*/
+addbot local.addbot_spawn:
+	if(level.jvbot_jv_mp_ai_running)
+	{
+		local.addbot_team = getcvar(jvbot_addbot_team)
+		if (local.addbot_team == allies || local.addbot_team == axis)
+			local.cvar_team = 1
+		else
+		{
+			local.teammembers = waitthread level.jvbot_modscript[spawnhandler]::getteammembers
+			local.allies = local.teammembers[1]
+			local.axis = local.teammembers[2]
+			local.alliessurplus = local.allies - local.axis
+		}
+		if(local.addbot_spawn > 1)
+		{
+			println "INFO[lib_console::addbot]: Received external spawn command for " local.addbot_spawn " bots."
+			for(local.i = 1; local.i <= local.addbot_spawn; local.i++)
+			{	
+				local.addbot_name = waitthread level.jvbot_modscript[libnames]::getname
+				
+				if(local.cvar_team != 1)
+				{
+					if(local.alliessurplus > 0)
+					{
+						local.addbot_team = axis
+						local.alliessurplus--
+					}
+					else if(local.alliessurplus < 0)
+					{
+						local.addbot_team = allies
+						local.alliessurplus++
+					}
+					else
+					{
+						if(randomint 2 == 0)
+						{
+							local.addbot_team = allies
+							local.alliessurplus++
+						}
+						else
+						{
+							local.addbot_team = axis
+							local.alliessurplus--
+						}
+					}
+				}
+				
+				wait (randomfloat 2)
+				local.botnum = waitthread level.jvbot_modscript[spawnhandler]::addbot local.addbot_name local.addbot_team "manual"
+				println "INFO[lib_console::addbot]: Spawned bot " local.addbot_name " for " local.addbot_team " with ID " local.botnum
+				if(level.jvbot_g_allowspawn == 0)
+					println "HINT[lib_console::addbot]: Use jvbot_forcenum" local.addbot_team "bots to change the number of bots next round."
+				wait 0.5
+			}
+		}
+		else
+		{
+			println "INFO[lib_console::addbot]: Received external bot spawn command."
+			local.addbot_name = getcvar(jvbot_addbot_name)
+			if(local.addbot_name == "")
+				local.addbot_name = waitthread level.jvbot_modscript[libnames]::getname
+	
+			if(local.cvar_team != 1)
+				local.addbot_team = waitthread level.jvbot_modscript[spawnhandler]::geteventeam
+	
+			println "INFO[lib_console::addbot]: Received external spawn command for " local.addbot_spawn " bots."
+				
+			wait (randomfloat 2)
+			local.botnum = waitthread level.jvbot_modscript[spawnhandler]::addbot local.addbot_name local.addbot_team "manual"
+			println "INFO[lib_console::addbot]: Spawned bot " local.addbot_name " for " local.addbot_team " with ID " local.botnum
+			if(level.jvbot_g_allowspawn == 0)
+				println "HINT[lib_console::addbot]: Use jvbot_forcenum" local.addbot_team "bots to change the number of bots next round."
+		}
+	}
+	else
+		println "ERROR[lib_console::addbot]: Main bot script not running."
+end
+
+/**
+Kick the bot with the specified bot ID.
+
+integer slot: ID of bot to kick.
+*/
+kickbot local.slot:
+	if(level.botenabled[local.slot] == 1)
+		println "INFO[lib_console::kickbot]: Received external ban for bot " level.botname[local.slot] " with ID " local.slot
+	waitthread level.jvbot_modscript[spawnhandler]::kickbot local.slot
+end
+
+/**
+Kicks all bots from the specified team.
+
+string team: allies or axis.
+*/
+kickbot_team local.team:
+	if(level.botnum != NIL)
+	{
+		for(local.i = 1; local.i <= level.botnum; local.i++)
+		{
+			if(level.botteam[local.i] == local.team)
+				waitthread kickbot local.i
+		}
+	}
+end
+
+/**
+Kicks all bots with notification.
+*/
+kickall_notify:
+	waitthread level.jvbot_modscript[spawnhandler]::kickall
+	wait 1
+	println "HINT[lib_console::kickall_notify]: Switch to shutdown if bots are no longer needed"
+end

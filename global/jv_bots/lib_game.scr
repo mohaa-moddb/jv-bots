@@ -1,0 +1,588 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Game Rules Library
+Replaces lib_timelimit.scr from v1.0
+Can be disabled using:
+	level.jvbot_notimehandler = 1
+---------------------------------------------
+*/
+
+setup:
+	level.jvbot_g_threadgroup = group
+	thread main
+end
+
+shutdown:
+	waitthread safeterminate level.jvbot_g_threadgroup
+	
+	// clear stage threads
+	waitthread global/jv_mp_players.scr::clear_stage_thread (level.jvbot_modscript[libgame]::playerjoin) join
+
+	// clearing hasjoined for all players
+	for(local.i = 1; local.i <= $player.size; local.i++)
+		$player[local.i].hasjoined = 0
+end
+
+safeterminate local.thread:
+	local.thread.terminate = 1
+	local.frames = 0
+	// wait ~5 secs
+	while(local.frames < 100 && local.thread)
+	{
+		waitframe
+		local.frames++
+	}
+	if(local.thread)
+	{
+		local.thread delete
+		println "ERROR[lib_game::safeterminate]: Failed to terminate a thread or threadgroup! Process has been killed."
+	}
+end
+
+main:
+	// start the forceready thread
+	thread forceready
+	
+	// start the notready thread
+	thread notready
+	
+	// start the player / bot counter
+	thread counter
+	
+	if(level.roundstart != 1)
+	{
+		waitthread waittillroundstart
+
+		// respawn all players & bots
+		waitthread respawnall
+	}
+	waitthread global/jv_mp_players.scr::add_stage_thread (level.jvbot_modscript[libgame]::playerjoin) join
+	
+	level.jvbot_g_allowspawn = 1 // used by bots
+	
+	// start the timelimit thread
+	thread timelimit
+
+	wait 1 // don't allow victory shortly after restart
+
+	if(group.terminate != 1)
+		// start the block join thread
+		thread blockjoin
+		
+	while(group.terminate != 1)
+		wait 0.5
+end
+
+counter:
+	local.flash = 1
+	while(group.terminate != 1)
+	{
+		// prints the number of bots / players	
+		local.players = waitthread global/jv_mp_players.scr::get_active_players $player
+		local.alliedplayers = (waitthread global/jv_mp_players.scr::get_team_players local.players allies).size
+		local.axisplayers = (waitthread global/jv_mp_players.scr::get_team_players local.players axis).size
+		local.alliedbots = waitthread level.jvbot_modscript[spawnhandler]::getnumaliveteambots allies
+		local.axisbots = waitthread level.jvbot_modscript[spawnhandler]::getnumaliveteambots axis
+		local.alliedtotal = local.alliedplayers + local.alliedbots
+		local.axistotal = local.axisplayers + local.axisbots
+		
+		// allied element
+		huddraw_alpha 97 1
+		huddraw_virtualsize 97 1
+		huddraw_font 97 "facfont-20"
+		if(local.alliedtotal == 1 && local.flash % 2 && level.dmrespawning != 1 && level.roundstart)
+			huddraw_color 97 1.0 1.0 1.0
+		else if(local.alliedtotal <= 0 && level.roundstart)
+			huddraw_color 97 1.0 0.0 0.0
+		else
+			huddraw_color 97 0.5 0.5 0.8
+		huddraw_rect 97 535 100 640 480
+		huddraw_string 97 ("Allies: " + local.alliedplayers + " / " + local.alliedbots + " / " + local.alliedtotal)
+		
+		// axis element
+		huddraw_virtualsize 96 1
+		huddraw_alpha 96 1
+		huddraw_font 96 "facfont-20"
+		if(local.axistotal == 1 && local.flash % 2 && level.dmrespawning != 1 && level.roundstart)
+			huddraw_color 96 1.0 1.0 1.0
+		else if(local.axistotal <= 0 && level.roundstart)
+			huddraw_color 96 1.0 0.0 0.0
+		else
+			huddraw_color 96 0.8 0.3 0.3
+		huddraw_rect 96 535 130 640 480
+		huddraw_string 96 ("Axis: " + local.axisplayers + " / " + local.axisbots + " / " + local.axistotal)
+		
+		local.flash++ 
+
+		wait 0.5
+		// don't need very rapid updates
+		// also is flash frequency
+	}
+	// clear hud elements
+	huddraw_alpha 97 0
+	huddraw_alpha 96 0
+end
+
+forceready:
+	local.forceready = getcvar g_forceready
+	while(group.terminate != 1 && level.levelend != 1)
+	{
+		setcvar g_forceready "0"
+		waitframe
+	}
+	setcvar g_forceready local.forceready
+end
+
+notready:
+	while(group.terminate != 1)
+	{
+		for(local.i = 1; local.i <= $player.size; local.i++)
+			$player[local.i] notready
+		waitframe	
+	}
+end
+
+waittillroundstart:	
+	// put the waiting for bots message on screen
+	thread hudmessage "Waiting For Bots" 99 "facfont-20" (0.7 0.7 0) 520 70 640 480
+	local.hudthread = parm.previousthread
+	
+	// wait till round starts	
+	local.allies = waitthread level.jvbot_modscript[spawnhandler]::getteammembers allies 1
+	local.axis = waitthread level.jvbot_modscript[spawnhandler]::getteammembers axis 1
+	while !((local.allies > 0 && local.axis > 0) || group.terminate == 1 || level.roundstart == 1)
+	{
+		waitframe
+		local.allies = waitthread level.jvbot_modscript[spawnhandler]::getteammembers allies 1
+		local.axis = waitthread level.jvbot_modscript[spawnhandler]::getteammembers axis 1
+	}
+	if(group.terminate != 1)
+		level.roundstart = 1
+	level.roundstarttime = level.time
+	waitthread safeterminate local.hudthread
+end
+
+respawnall:
+	// respawn players
+	for(local.i = 1; local.i <= $player.size; local.i ++)
+	{
+		local.player = $player[local.i]
+		if(local.player.ingame)
+		{
+			local.player respawn
+			// have to update stage manually
+			local.player thread global/jv_mp_players.scr::player_stage_thread 3
+		}
+	}
+	
+	// respawn bots
+	for(local.i = 1; local.i <= level.botlastid; local.i++)
+	{
+		local.bot = level.actualbots[local.i]
+		local.respawnpos = waitthread level.jvbot_modscript[spawnhandler]::getspawnposition local.bot.dmteam
+		local.bot.origin = local.respawnpos.origin
+		local.bot.angles = local.respawnpos.angles
+		local.bot.health = 100
+	}
+end
+
+endindraw:
+	if(level.levelend != 1)
+	{
+		// a team can't have won yet
+		level.levelend = 1
+		local.dm = spawn DM_Manager
+		local.dm doroundtransition
+	}
+end
+
+timelimit:
+	println "started timelimit thread"
+	local.starttime = level.time
+	while(group.terminate != 1)
+	{
+		local.timelimit = waitthread gettimelimit
+		if(local.timelimit == 0)
+		{	
+			println "INFO[lib_game::timelimit]: No timelimit set, waiting for server overwrite..."
+			while(group.terminate != 1 && local.timelimit == 0)
+			{
+				wait 0.5
+				local.timelimit = waitthread gettimelimit
+			}
+		}
+		while(local.timelimit > 0 && group.terminate != 1 && (level.time - local.starttime) <= (local.timelimit * 60))
+		{
+			local.time_elapsed = level.time - local.starttime
+			local.timeleft = int((local.timelimit * 60) - local.time_elapsed)
+			
+			local.mins = int(local.timeleft / 60)
+			local.secs = local.timeleft - local.mins * 60
+			
+			if(local.mins == 0 || local.secs == 0)
+				huddraw_color 99 1 1 1
+			else
+				huddraw_color 99 0.7 0.7 0
+			
+			if(local.secs < 10)
+				local.secs_str = "0" + local.secs
+			else
+				local.secs_str = local.secs
+				
+			local.time = (local.mins + ":" + local.secs_str)
+			
+			// redraw hud for new players
+			waitthread timelimit_hud_redraw
+			huddraw_string 99 ("Time Left: " + local.time)
+			
+			wait 1
+			local.timelimit = waitthread gettimelimit
+		}
+		huddraw_alpha 99 0
+		if(local.timelimit > 0 && (level.time - local.starttime) > (local.timelimit * 60))
+		{
+			println "INFO[lib_game::timelimit]: Timelimit hit"
+			
+			// wait till all bombs are defused
+			waitthread waitforbombs 1 1 1
+			
+			if(level.clockside == allies)
+				teamwin allies
+			else if(level.clockside == axis)
+				teamwin axis
+			else if(level.clockside == kills)
+			{
+				// team with most living members wins
+				local.allies = waitthread level.jvbot_modscript[spawnhandler]::getteammembers allies 1
+				local.axis = waitthread level.jvbot_modscript[spawnhandler]::getteammembers axis 1
+				if(local.allies > local.axis)
+					teamwin allies
+				else if(local.axis > local.allies)
+					teamwin axis
+				else
+					// draw
+					waitthread endindraw
+			}
+			else
+				waitthread endindraw
+
+			break
+		}
+		waitframe
+	}
+end
+
+waitforteambombs local.team:
+	if(level.team_targets_to_destroy[local.team] != NIL && level.team_targets_to_destroy[local.team] > 0 && level.team_targets_destroyed[local.team] != NIL)
+	{
+		local.targets_remaining = level.team_targets_to_destroy[local.team] - level.team_targets_destroyed[local.team]
+		if(local.targets_remaining > 0 && level.team_bombs_planted[allies] >= local.targets_remaining && level.clockside != local.team)
+		{
+			iprintlnbold_noloc "A bomb is still set!"
+			while(local.targets_remaining > 0 && level.team_bombs_planted[allies] >= local.targets_remaining)
+			{
+				wait 0.5
+				local.targets_remaining = level.team_targets_to_destroy[local.team] - level.team_targets_destroyed[local.team]
+			}
+			wait 1 // teamwin delay in case bomb explodes
+		}
+	}
+end
+
+waitforbombs local.allies local.axis local.global:
+	if(local.allies == 1)
+	{
+		// allies check
+		waitthread waitforteambombs allies
+	}
+	if(local.axis == 1)
+	{
+		// axis check
+		waitthread waitforteambombs axis
+	}
+	if(local.global == 1)
+	{
+		// global check
+		if(level.targets_to_destroy > 0)
+		{
+			local.targets_remaining = level.targets_to_destroy - level.targets_destroyed
+			if(local.targets_remaining > 0 && level.bombs_planted >= local.targets_remaining && level.clockside != level.planting_team)
+			{
+				iprintlnbold_noloc "A bomb is still set!"
+				while(local.targets_remaining > 0 && level.bombs_planted >= local.targets_remaining)
+				{
+					wait 0.5
+					local.targets_remaining = level.targets_to_destroy - level.targets_destroyed
+				}
+				wait 1 // teamwin delay in case bomb explodes
+			}
+		}
+	}
+end
+
+timelimit_hud_redraw:
+	huddraw_rect 99 530 70 640 480 // test, was 540
+	huddraw_alpha 99 1
+	huddraw_font 99 "facfont-20"
+	huddraw_virtualsize 99 1
+end
+
+gettimelimit:
+	if(level.dmroundlimit != NIL)
+	{
+		local.limit_cvar = int(getcvar(timelimit))
+		if(local.limit_cvar > 0)
+			local.limit = local.limit_cvar
+		else if(local.limit_cvar < 0)
+			local.limit = 0
+		else
+			local.limit = level.dmroundlimit
+	}
+	else
+	{
+		local.limit_cvar = int(getcvar(timelimit))
+		if(local.limit_cvar > 0)
+			local.limit = local.limit_cvar
+		else
+			local.limit = 0
+	}
+end local.limit
+
+blockjoin local.delay:
+	// first wait till the allowjointime is finished
+	local.jointime = int(getcvar g_allowjointime)
+	local.starttime = level.roundstarttime
+	while(group.terminate != 1 && (level.time - local.starttime) < local.jointime)
+	{
+		// start the win threads
+		if(level.dmrespawning == 0)
+		{
+			thread winifdead allies axis
+			local.alliesthread = parm.previousthread
+
+			thread winifdead axis allies
+			local.axisthread = parm.previousthread
+
+			// start the force terminate handler
+			thread forceterminate
+			local.termthread = parm.previousthread
+
+			while(group.terminate != 1 && (level.time - local.starttime) < local.jointime && level.dmrespawning == 0)
+				waitframe
+
+			if(local.alliesthread)
+				local.alliesthread.terminate = 1
+
+			if(local.axisthread)
+				local.axisthread.terminate = 1
+
+			if(local.termthread)
+				local.termthread.terminate = 1
+		}
+		else
+			waitframe
+	}
+	
+	while(group.terminate != 1)
+	{
+		while(group.terminate != 1 && level.dmrespawning == 1)
+			// don't block respawning
+			waitframe
+		
+		if(level.dmrespawning == 0)
+		{
+			// disable joining
+			level.jvbot_g_blockjoin = 1
+			level.jvbot_g_allowspawn = 0 // used by bots
+					
+			thread winifdead allies axis
+			local.alliesthread = parm.previousthread
+
+			thread winifdead axis allies
+			local.axisthread = parm.previousthread
+
+			// start the force terminate handler
+			thread forceterminate
+			local.termthread = parm.previousthread
+			
+			while(group.terminate != 1 && level.dmrespawning == 0)
+				waitframe
+
+			waitthread safeterminate local.alliesthread
+			waitthread safeterminate local.axisthread
+			waitthread safeterminate local.termthread
+			
+			level.jvbot_g_blockjoin = 0
+			level.jvbot_g_allowspawn = 1 // used by bots
+		}
+	}
+end
+
+playerjoin:
+	// does resolve
+	local.player = parm.player
+	if(level.jvbot_g_blockjoin == 1 || (local.player.hasjoined == 1 && level.dmrespawning == 0))
+	{
+		local.player spectator
+		local.player iprint "You can't join this round anymore. Please wait till the next round."
+	}
+	local.player.hasjoined = 1
+end
+
+winifdead local.winningteam local.losingteam:
+	local.losers = waitthread level.jvbot_modscript[spawnhandler]::getteammembers local.losingteam 1
+	while(local.terminate != 1 && local.losers > 0)
+	{
+		wait 0.5 // realistic delay :)	
+		local.losers = waitthread level.jvbot_modscript[spawnhandler]::getteammembers local.losingteam 1
+	}
+	if(local.terminate != 1 && level.jvbot_jv_mp_ai_running == 1)
+	{
+		// losing team bomb check
+		if(local.losingteam == allies)
+			waitthread waitforbombs 1 0 0
+		else
+			waitthread waitforbombs 0 1 0
+		
+		// global check
+		if(level.planting_team == local.losingteam)
+			waitthread waitforbombs 0 0 1
+			
+		wait 1
+		teamwin local.winningteam
+	}
+end
+
+forceterminate:
+	// allows immediate termination of round
+	while(local.terminate != 1)
+	{
+		// all players have died. They can choose to watch the bots or restart 
+		// the round if ALL non-spectators press USE
+		
+		// make sure there is at least one player in a team
+		local.players = waitthread global/jv_mp_players.scr::get_active_players $player
+
+		local.j = 0
+		while(local.terminate != 1 && local.players.size <= 0 && $player.size > 0)
+		{
+			wait 0.25
+			// terminate all old vote threads
+			for(local.i = 1; local.i <= local.j; local.i++)
+			{
+				if(local.thread[local.i])
+					// can safely kill these threads
+					local.thread[local.i] end	
+			}
+			local.numagreed = 0
+			local.j = 0
+			// start updated vote threads
+			for(local.i = 1; local.i <= $player.size; local.i++)
+			{
+				if($player[local.i].agreed != 1)
+				{
+					$player[local.i] thread acceptvote
+					local.j++
+					local.thread[local.j] = parm.previousthread
+				}
+				else
+					local.numagreed++
+			}
+			
+			local.message = "Vote: Terminate Round? Press USE to accept ( " + local.numagreed + " / " + $player.size + " )"
+			huddraw_alpha 95 1
+			huddraw_virtualsize 95 1
+			huddraw_font 95 "facfont-20"
+			if(local.numagreed < $player.size)
+				huddraw_color 95 0.8 0.8 0.8
+			else
+				huddraw_color 95 1.0 1.0 1.0
+			huddraw_rect 95 -100 40 100 -180
+			huddraw_string 95 local.message
+			
+			wait 0.25
+			if(local.numagreed >= $player.size)
+			{
+				iprintlnbold_noloc "You have chosen to terminate the round."
+				waitthread endindraw
+				pause // end of script :)
+			}
+			local.players = waitthread global/jv_mp_players.scr::get_active_players $player
+		}
+		// hide the hud element
+		huddraw_alpha 95 0
+		wait 2
+	}
+end
+
+acceptvote:
+	while(self && self.ingame != 1)
+	{
+		if(self.useheld)
+		{
+			self.agreed = 1
+			break	
+		}
+		waitframe // respond quickly
+	}
+end
+
+allpressinguse local.guys:
+	for(local.i = 1; local.i <= local.guys.size; local.i++)
+	{
+		if(local.guys[local.i].useheld == 0)
+			end 0
+	}
+end 1
+
+hudmessage local.message local.index local.font local.color local.xmin local.xmax local.ymin local.ymax:
+	/* fonts
+	courier-16 / 18 / 20
+	facfont-20
+	handle-16 / 18 / 22 / 23
+	marlett
+	verdana-12
+	verdana-14
+	//--------*/
+	while(local.terminate != 1)
+	{
+		huddraw_alpha local.index 1
+		huddraw_virtualsize local.index 1
+		huddraw_font local.index local.font
+		huddraw_color local.index local.color[0] local.color[1] local.color[2]
+		huddraw_rect local.index local.xmin local.xmax local.ymin local.ymax
+		huddraw_string local.index local.message
+		waitframe
+	}
+	huddraw_alpha local.index 0
+end

@@ -1,0 +1,68 @@
+/**
+Multiplayer Bot Team Avatar for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+TIKI
+setup
+{
+	scale 0.52
+	path models/fx/dummy
+	skelmodel dummy2.skd
+}
+
+init
+{
+	server
+	{
+		classname ScriptModel
+		notsolid
+		rendereffects +dontdraw
+	}
+}
+
+animations
+{
+	idle dummy2.skc
+	{
+		client
+		{
+			0 originspawn
+			(
+				spawnrate 20
+				model textures/hud/axis_headicon.spr
+				color 1 1 1
+				alpha 0.8
+				life 0.05
+				scale 0.52
+				offset 0 0 24
+				spritegridlighting
+			)
+		}
+	}
+}

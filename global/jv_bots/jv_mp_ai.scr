@@ -1,0 +1,1088 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.1
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.planetmedal.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Run this thread to enable the bots.
+Should be called from map script file only.
+Preferrably use as waitthread below level waittill spawn.
+	
+	Example:
+	waitthread global/jv_bots/jv_mp_ai.scr::enable
+	
+Add debug arguments to your likings. Type '1' for enable, 
+'0' for disable. Debug options are as follows:
+
+boolean verbose: 		add extra debug output to console.
+boolean debug_colors: 	add a colored light to bots representing their current task.
+boolean debug_routes: 	shows info about the setup of routes in your map.
+boolean debug_mph: 		prints messages in the console that are related to the function 
+						of the main player handler (jv_mp_players.scr).
+---------------------------------------------
+*/
+
+enable local.verbose local.debug_colors local.debug_routes local.debug_mph:
+	// sets cvars and level vars
+	// adds libraries
+	// eventually starts script
+	level.jvbot_version = "1.1"
+
+	setcvar "jvbot_running" "0"
+	setcvar "jvbot_version" level.jvbot_version
+
+	// preferrably move these lines to your map's script!
+	cache models/hud/allies.tik
+	cache models/hud/axis.tik
+
+	if(local.verbose != NIL)
+		level.jvbot_verbose = local.verbose
+
+	if(level.jvbot_verbose == 1)
+		println "INFO[jv_mp_ai::enable]: Verbose output enabled."
+	
+	if(local.debug_colors != NIL)
+		level.debug_light = local.debug_colors
+
+	if(level.debug_light == 1)
+		println "INFO[jv_mp_ai::enable]: Task coloring enabled."
+
+	if(local.debug_mph != NIL)
+		level.main_player_handler_debug = local.debug_mph
+
+	if(level.main_player_handler_debug)
+		println "INFO[jv_mp_ai::enable]: Main Player Handler debug enabled."
+
+	if(level.jvbot_forcemodels == NIL)
+		level.jvbot_forcemodels = 0
+
+	if (level.jvbot_setup != 1)
+	{
+		level.jvbot_setup = 1
+	
+		if(local.debug_routes != NIL)
+			level.jvbot_routeprint = local.debug_routes
+	
+		if(level.jvbot_routeprint == 1)
+			println "INFO[jv_mp_ai::enable]: Route debug enabled."
+		
+		level.jvbot_homedir = waitthread getrankedvar "global/jv_bots/" level.jvbot_homedir "jvbot_homedir" string 1 1
+		if(level.jvbot_homedir != "global/jv_bots/")
+			println "INFO[jv_mp_ai::enable]: Using homedir " level.jvbot_homedir
+		
+		if(level.jvbot_main == NIL)
+			level.jvbot_main = "jv_mp_ai"
+		else
+			println "INFO[jv_mp_ai::enable]: Using main script: " level.jvbot_main
+		level.jvbot_main_script = level.jvbot_homedir + level.jvbot_main + ".scr"
+		
+		//* set handler and library defaults
+		waitthread adddefaultlib "libbomb" "lib_bomb" level.jvbot_libbomb "jvbot_lib_bomb"
+		waitthread adddefaultlib "libmachinegun" "lib_machinegun" level.jvbot_libmachinegun "jvbot_lib_machinegun"
+		waitthread adddefaultlib "libnames" "lib_names" level.jvbot_libnames "jvbot_lib_names"
+		waitthread adddefaultlib "libweapon" "lib_weapon" level.jvbot_libweapon "jvbot_lib_weapon"
+		waitthread adddefaultlib "spawnhandler" "spawnhandler_default" level.jvbot_spawnhandler "jvbot_lib_spawnhandler"
+		waitthread adddefaultlib "taskhandler" "taskhandler_default" level.jvbot_taskhandler "jvbot_lib_taskhandler"
+		waitthread adddefaultlib "spawner" "spawner_dynamic" level.jvbot_spawner "jvbot_lib_spawner"
+		if(level.jvbot_notimehandler != 1)
+			waitthread adddefaultlib "libgame" "lib_game" level.jvbot_libgame "jvbot_lib_game"
+		
+		level.jvbot_modscript[debug] = level.jvbot_homedir + "lib_debug.scr"
+		
+		if(level.jvbot_attackhandler == NIL)
+			level.jvbot_attackhandler = "anim/jv_bots/attack.scr"
+		else if(level.jvbot_attackhandler != "anim/jv_bots/attack.scr")
+			println "INFO[jv_mp_ai::enable]: Using custom attack animation handler: " level.jvbot_handler
+		
+		//* disables spawn presets as enemies
+		waitthread spawnsetup
+		
+		//* runs all task setup threads, sets defaults if necessary
+		waitthread tasksetup
+
+		//* interprets route destinations
+		waitthread routesetup
+	}
+	else
+		println "INFO[jv_mp_ai::enable]: Skipped setup."
+
+	if(level.jvbot_jv_mp_ai_running == NIL)
+		level.jvbot_jv_mp_ai_running = 0
+	local.run = getcvar jvbot_allowed
+	if(local.run != "0")
+		waitthread startup
+		
+	if(level.jvbot_noconsole != 1)
+	{
+		level.jvbot_modscript[libconsole] = (level.jvbot_homedir + "lib_console.scr")
+		thread level.jvbot_modscript[libconsole]::main
+	}
+end
+
+startup:
+	// starts the script
+	if(level.jvbot_jv_mp_ai_running == 1)
+	{
+		if(level.jvbot_verbose)
+			println "ERROR[jv_mp_ai::enable]: Bot script already running! Exiting."
+		end
+	}
+		
+	setcvar "jvbot_running" "1"
+	
+	level.jvbot_jv_mp_ai_running = 1
+	
+	println "INFO[jv_mp_ai::enable]: Bots version " level.jvbot_version " enabled!" 
+	
+	waitthread initvars
+	waitthread setloopdelay
+	
+	//* starts player handler
+	thread global/jv_mp_players.scr::main_player_handler
+	
+	//* sets up the player handlers
+	waitthread global/jv_mp_players.scr::add_stage_thread level.jvbot_main_script::set_notarget start
+	waitthread global/jv_mp_players.scr::add_stage_thread level.jvbot_main_script::set_target join
+	waitthread global/jv_mp_players.scr::add_stage_thread level.jvbot_main_script::set_notarget death
+	
+	//* modules setup
+	for(local.i = 1; local.i <= level.jvbot_libraries_script.size; local.i++)
+	{
+		if(level.jvbot_verbose)
+			println "INFO[jv_mp_ai::startup]: Running module setup for " level.jvbot_libraries_name[local.i]
+		waitthread level.jvbot_libraries_script[local.i]::setup
+	}
+	//* Runs the 'made by jv_map' splash screen 
+	thread splash
+end
+
+/**
+Disables entire bot system. Can be re-enabled later.
+The caller is responsible for kicking all bots.
+*/
+disable:
+	if(level.jvbot_jv_mp_ai_running == 1)
+	{
+		setcvar "jvbot_running" "0"
+		
+		println "INFO[jv_mp_ai::disable]: Shutdown initiated"
+		level.jvbot_jv_mp_ai_running = 0
+
+		waitthread level.jvbot_modscript[spawnhandler]::kickall
+
+		if(level.jvbot_verbose)
+			println "INFO[jv_mp_ai::disable]: Removing stage threads..."
+			
+		waitthread global/jv_mp_players.scr::clear_stage_thread level.jvbot_main_script::set_notarget start
+		waitthread global/jv_mp_players.scr::clear_stage_thread level.jvbot_main_script::set_target join
+		waitthread global/jv_mp_players.scr::clear_stage_thread level.jvbot_main_script::set_notarget death
+		waitthread global/jv_mp_players.scr::shutdown
+		
+		if(level.jvbot_verbose)
+		{
+			println "INFO[jv_mp_ai:disable]: Stage threads removed."
+			println "INFO[jv_mp_ai::disable]: Shutting down handlers..."
+		}
+		
+		for(local.i = 1; local.i <= level.jvbot_libraries_script.size; local.i++)
+			waitthread libshutdown local.i
+			
+		if(level.jvbot_verbose)
+			println "INFO[jv_mp_ai::disable]: Handlers terminated."
+			
+		println "INFO[jv_mp_ai::disable]: Bots version " level.jvbot_version " disabled!" 	
+	}
+	else if(level.jvbot_verbose)
+		println "ERROR[jv_mp_ai::disable]: Bot script not running."
+end
+
+initvars:
+	level.jvbot_showavatar = waitthread getrankedvar 1 level.jvbot_showavatar jvbot_showavatar int 1
+	level.jvbot_skill = waitthread getrankedvar 3 level.jvbot_skill jvbot_skill int 1
+	
+	// respawning control
+	if(level.jvbot_respawning == NIL)
+		level.jvbot_respawning = level.dmrespawning
+end
+
+adddefaultlib local.name local.default local.custom local.cvar:
+	local.cvarval = getcvar local.cvar
+	if(local.cvarval == "")
+	{
+		if(local.custom == NIL)
+			local.script = local.default
+		else
+		{
+			local.script = local.custom
+			if(local.custom != local.default)
+				println "INFO[jv_mp_ai::adddefaultlib]: Using custom module " local.name ": " local.custom
+		}
+	}
+	else
+	{
+		local.script = local.cvarval
+		if(local.script != local.default)
+			println "INFO[jv_mp_ai::adddefaultlib]: Using custom module " local.name ": " local.custom	
+	}
+	setcvar local.cvar local.script
+	waitthread addlib local.script local.name
+end
+
+addlib local.script local.name:
+	if(local.script == NIL)
+	{
+		println "ERROR[jv_mp_ai::addlib]: Trying to add a module without a script."	
+		end
+	}
+	local.fullscript = level.jvbot_homedir + local.script + ".scr"
+	if(local.name == NIL)
+	{
+		println "ERROR[jv_mp_ai::addlib]: Trying to add a module without a name (" local.fullscript ")."
+		end
+	}
+
+	local.id = level.jvbot_libraries_script.size + 1
+	if(local.id <= 0)
+		local.id = 1
+	
+	level.jvbot_libraries_script[local.id] = local.fullscript
+	level.jvbot_libraries_name[local.id] = local.name
+	
+	level.jvbot_modscript[local.name] = local.fullscript
+	
+	if(level.jvbot_verbose)
+		println "INFO[jv_mp_ai::addlib]: Added module " local.name " (script: " local.fullscript ")."
+end
+
+libshutdown local.i:
+	if(level.jvbot_verbose)
+		println "INFO[jv_mp_ai::libshutdown]: Terminating " level.jvbot_libraries_name[local.i] " (" level.jvbot_libraries_script[local.i] ")."
+	local.shutdownthread = thread level.jvbot_libraries_script[local.i]::shutdown
+	local.time = 0
+	while(local.shutdownthread && local.time <= 5)
+	{
+		wait 0.5
+		local.time += 0.5
+	}
+	if(local.time >= 5)
+		println "ERROR[jv_mp_air::libshutdown]: Couldn't terminate " level.jvbot_libraries_name[local.i] " within 5 seconds."
+end
+
+/**
+Splash thread. Shows jv_map ad every two minutes.
+*/
+splash:
+	wait 10
+	while(level.jvbot_jv_mp_ai_running == 1)
+	{
+		locprint 140 80 ("Multiplayer Bots v." + level.jvbot_version + " by jv_map\nhttp://www.planetmedal.com/freebrief")
+		wait 180
+	}
+end
+
+/**
+This thread checks for available tasks
+and sets default values if necessary. 
+Internal use at startup.
+*/
+tasksetup:
+	waitthread addtask follow 1.5 1
+	waitthread addtask health 10.0 1
+	if($bombnode)
+	{
+		waitthread addtask attackbomb 1.0 1
+		waitthread addtask defendbomb 1.0 1
+	}
+	if($sniper)
+		waitthread addtask sniper 0.1 1
+	if($camper)
+		waitthread addtask camp 0.1 1
+	if($mg_node)
+		waitthread addtask machinegun 0.5 1
+end
+
+/**
+Adds tasks to be performed by bots. Use this to 
+add new tasks for the bots. Arguments are as follows:
+
+string name: 		name of task, determines the name of the script 
+					file to use (task_<name>.scr)
+float priority: 	priority of the given task.
+boolean default:	omit for external use. 1 for internal use.
+*/
+addtask local.name local.priority local.default:
+	// check whether the task yet exists:
+	local.ok = 0
+
+	for(local.i = 1; local.i <= level.jvbot_tasks_name.size; local.i++)
+	{
+		local.othername = level.jvbot_tasks_name[local.i]
+		if(local.othername == local.name)
+		{
+			if(level.jvbot_verbose)
+				println "INFO[jv_mp_ai::addtask]: Task " local.name " already exists. Running setup nonetheless."
+			local.ok = -1
+			break
+		}
+	}
+
+	if(local.ok == 0)
+	{
+		local.id = level.jvbot_tasks_name.size + 1
+		if(local.id <= 0)
+			local.id = 1
+		
+		if(local.name == NIL)
+		{
+			println "ERROR[jv_mp_ai::addtask]: Trying to add a task without a name."
+			end
+		}
+		
+		level.jvbot_tasks_name[local.id] = local.name
+		level.jvbot_tasks_script[local.name] = level.jvbot_homedir + "task_" + local.name + ".scr"
+		
+		if(level.jvbot_tasks_priority[local.name] == NIL)
+		{
+			if(local.priority == NIL)
+			{
+				println "WARNING[jv_mp_ai::addtask]: Task " local.name " doesn't have a default priority, using 1."
+				local.priority = 1	
+			}
+			level.jvbot_tasks_priority[local.name] = local.priority
+		}
+		
+		if(local.default == NIL || level.jvbot_verbose == 1)
+			println "INFO[jv_mp_ai::addtask]: Added task " local.name " (priority: " level.jvbot_tasks_priority[local.name] ")."
+	}
+	waitthread level.jvbot_tasks_script[local.name]::setup
+end
+
+/**
+Calculates routes using the 'routes' key and level.routelist variables.
+Use level.jvbot_routeprint = 1 to print the routes to the console.
+Routes are traced to targetnames set as route tracers by a subsequent thread.
+*/
+routesetup:
+	if(level.jvbot_routesdone == 1)
+	{
+		if(level.jvbot_verbose)
+			println "INFO[jv_mp_ai::routesetup]: Routes already calculated, skipping setup."
+		end
+	}
+
+	local.num = 0
+	//* check all entities with targetname route
+	for(local.i = 1; local.i <= $route.size; local.i++)
+	{
+		local.node = $route[local.i]
+		if(level.jvbot_verbose && level.jvbot_routeprint)
+		{
+			print "INFO[jv_mp_ai::routesetup]: Checking route node " local.i " (name: " local.node.name " id: " local.node.id
+			if(local.node.special != NIL)
+				println " special: " local.node.special ")."
+			else
+				println ")."
+		}
+		if(local.node.name == NIL)
+			println "ERROR[jv_mp_ai::routesetup]: Route [entnum: " local.node.entnum "] [id: " local.node.id "] doesn't have a $name."
+		else if !(local.node.id > 0)
+			println "ERROR[jv_mp_ai::routesetup]: Route [entnum: " local.node.entnum "] [$name: " local.node.name "] doesn't have an #id."
+		else
+		{
+			if(level.route[local.node.name] == NIL)
+			{
+				// found a new route
+				local.num++
+				local.routes[local.num] = local.node.name
+				if(level.jvbot_verbose && level.jvbot_routeprint)
+					println "INFO[jv_mp_ai::routesetup]: Found route: " local.routes[local.num]
+			}
+			//* store this node at the appropriate array location
+			level.route[local.node.name][local.node.id] = local.node
+			if(local.lastid[local.node.name] == NIL || local.node.id > local.lastid[local.node.name])
+				local.lastid[local.node.name] = local.node.id
+		}
+	}
+	//* check for route destinations
+	// destination setup
+	local.targetnames = level.jvbot_traceroutes
+
+	//* check for all trace route types
+	for(local.j = 1; local.j <= local.targetnames.size; local.j++)
+	{
+		local.targetname = local.targetnames[local.j]
+		if(level.jvbot_routeprint)
+			println "INFO[jv_mp_ai::routesetup]: Tracing routes to " local.targetname
+
+		//* check for all entities with corresponding targetname
+		for(local.i = 1; local.i <= $(local.targetname).size; local.i++)
+		{
+			local.node = $(local.targetname)[local.i]
+			if(level.jvbot_verbose && level.jvbot_routeprint)
+				println "INFO[jv_mp_ai::routesetup]: Checking node: " local.targetname "[" local.i "]"
+			//* check for route key
+			if(local.node.route != NIL)
+			{
+				// found a destination
+				if(local.newnum[local.node.route] == NIL)
+					local.newnum[local.node.route] = 0
+				local.newnum[local.node.route]++
+				//* set this node as destination (index 0 in the route array)
+				level.route[local.node.route][0][local.newnum[local.node.route]] = local.node
+				if(level.jvbot_routeprint)
+					println "INFO[jv_mp_ai::routesetup]: Found direct route: " local.node.route
+			}
+			//* also check for routelist key
+			if(local.node.routelist != NIL)
+			{
+				local.newroutes = level.routelist[local.node.routelist]
+				//* check all routes in the current routelist
+				for(local.k = 1; local.k <= local.newroutes.size; local.k++)
+				{
+					local.newroute = local.newroutes[local.k]
+					if(local.newnum[local.newroute] == NIL)
+						local.newnum[local.newroute] = 0
+					local.newnum[local.newroute]++
+					//* set this node as a destination for the route
+					level.route[local.newroute][0][local.newnum[local.newroute]] = local.node
+					if(level.jvbot_routeprint)
+						println "INFO[jv_mp_ai::routesetup]: Found routelist route: " local.newroute
+				}
+			}
+		}
+	}
+	// sanity checks
+	for(local.i = 1; local.i <= local.num; local.i++)
+	{
+		local.name = local.routes[local.i]
+		if(level.jvbot_routeprint == 1)
+		{
+			println "Route: " local.name
+			println "-------------------------"
+		}
+
+		for(local.id = 0; local.id <= local.lastid[local.name]; local.id++)
+		{
+			local.node = level.route[local.name][local.id]
+			if((local.node == NIL || local.node == NULL || local.node == "") && !(local.node.size > 0))
+				println "ERROR[jv_mp_ai::routesetup]: Node " local.id " is missing for route " local.name
+			if(local.node.size > 1)
+			{
+				if(level.jvbot_routeprint == 1)
+					println "	Node: [" local.id "] list:"
+				for(local.j = 1; local.j <= local.node.size; local.j++) // temp
+				{
+					if(local.node[local.j].size > 1)
+					{
+						for(local.k = 1; local.k <= local.node[local.j].size; local.k++)
+							if(level.jvbot_routeprint == 1)
+								println "			[" local.k "] " local.node[local.j][local.k]
+					}
+					else
+						if(level.jvbot_routeprint == 1)
+							println "		[" local.j "] " local.node[local.j]
+				}
+			}
+			else
+			{
+				level.route[local.name][local.id] = local.node[1]
+				if(level.jvbot_routeprint == 1)
+					println "	Node: [" local.id "] " local.node
+			}
+		}
+		level.route_lastid[local.name] = local.lastid[local.name]
+		if(level.jvbot_routeprint == 1)
+		{
+			println "LastID: " local.lastid[local.name]
+			println "-------------------------"
+		}
+	}
+	level.jvbot_routesdone = 1
+end
+
+/**
+Adds a route to level.jvbot_traceroutes.
+All routes need to be added before routesetup.
+
+string targetname: 	targetname to trace routes for.
+integer default: 	miss out for external calls.
+*/
+addroute local.targetname local.default:
+	if($(local.targetname))
+	{
+		// check if it exists
+		for(local.i = 1; local.i <= level.jvbot_traceroutes.size; local.i++)
+		{
+			local.name = level.jvbot_traceroutes[local.i]
+			if(local.name == local.targetname)
+			{
+				if(level.jvbot_verbose)
+					println "INFO[jv_mp_ai::addroute]: Route tracer " local.targetname " already added."
+				end
+			}
+		}
+		
+		local.id = level.jvbot_traceroutes.size + 1
+		if(local.id <= 0)
+			local.id = 1
+		
+		level.jvbot_traceroutes[local.id] = local.targetname
+		if(local.default == NIL || level.jvbot_routeprint == 1 || level.jvbot_verbose == 1)
+			println "INFO[jv_mp_ai::addroute]: Added route tracer for targetname " local.targetname "."
+	}
+	else
+		println "ERROR[jv_mp_ai::addroute]: Couldn't find " local.targetname
+end
+
+/**
+Makes the player targetable when he joins. Internal use.
+*/
+set_target:
+	local.player = parm.player
+	if(self)
+		local.player = self
+	local.player threatbias 0
+	if(local.player.dmteam == axis)
+		local.player german
+	else
+		local.player american
+end
+
+/**
+Untargets the player. Internal use.
+*/
+set_notarget:
+	local.player = parm.player
+	if(self)
+		local.player = self
+	local.player threatbias ignoreme
+end
+
+/**
+Inputs a level variable unless set by a cvar. Can be used externally.
+
+void default:		default value for given variable.
+void levelvar:  	level variable.
+string servervar:	name of cvar that can override the level variable.
+string datatype:	sets datatype to cast cvar to, can be: int, bool, entity, float or string.
+bool nowarning:		prevents error message when the level side variable isn't set.
+bool noset:			prevents the output variable to be cast to the given cvar.
+*/
+getrankedvar local.default local.levelvar local.servervar local.datatype local.nowarning local.noset:
+	local.cvar = getcvar(local.servervar)
+	if(local.cvar == "")
+	{
+		if(local.levelvar == NIL)
+		{
+			if(local.nowarning == NIL)
+				println "WARNING[jv_mp_ai::getrankedvar]: Using internal default (" local.default ") for cvar: " local.servervar
+			local.end = local.default
+		}
+		else
+			local.end = local.levelvar
+	}
+	else
+	{
+		switch(local.datatype)
+		{
+			string:
+				local.end = local.cvar
+				break
+			float:
+				local.end = float(local.cvar)
+				break
+			entity:
+				local.end = entity(local.cvar)
+				break
+			bool:
+				local.end = bool(local.cvar)
+				break
+			int:	
+			default:
+				local.end = (int(local.cvar))
+		}
+	}
+	if(local.noset == NIL || local.noset == 0 || local.noset == NULL)
+		setcvar local.servervar local.end
+end local.end
+
+/**
+Converts spawnpreset AI actors into a model name array.
+Original entities are removed. Internal use.
+*/
+spawnsetup:
+	// setup spawn presets
+	local.alliesdefault = "human/multiplayer_allied_airborne_soldier.tik"
+	local.axisdefault = "human/multiplayer_german_wehrmact_soldier.tik"
+	
+	if($alliesspawnpreset)
+	{
+		for(local.i = 1; local.i <= $alliesspawnpreset.size; local.i++)
+		{
+			local.preset = $alliesspawnpreset[local.i]
+			level.jvbot_alliespreset[local.i] = local.preset.model
+		}
+		if(level.jvbot_verbose)
+			println "INFO[jv_mp_ai::spawnsetup]: Found " local.i " alliesspawnpresets."	
+		$alliesspawnpreset remove
+	}
+	else
+	{
+		println "ERROR[jv_mp_ai::spawnsetup]: Couldn't find an alliesspawnpreset, using default (" local.alliesdefault ")."
+		level.jvbot_alliespreset[1] = local.alliesdefault
+		cache local.alliesdefault
+	}
+
+	if($axisspawnpreset)
+	{
+		for(local.i = 1; local.i <= $axisspawnpreset.size; local.i++)
+		{
+			local.preset = $axisspawnpreset[local.i]
+			level.jvbot_axispreset[local.i] = local.preset.model
+		}	
+		if(level.jvbot_verbose)
+			println "INFO[jv_mp_ai::spawnsetup]: Found " local.i " axisspawnpresets."	
+		$axisspawnpreset remove
+	}
+	else
+	{
+		println "ERROR[jv_mp_ai::spawnsetup]: Couldn't find an axisspawnpreset, using default (" local.axisdefault ")."
+		level.jvbot_axispreset[1] = local.axisdefault
+		cache local.axisdefault
+	}
+end
+
+/**
+Updates level.jvbot_loopdelay variable. Can be set server side 
+using jvbot_loopdelay. Called by lib_console.
+*/
+setloopdelay:
+	local.loopdelay = getcvar(jvbot_loopdelay)
+	
+	if(float(local.loopdelay) != level.jvbot_loopdelay)
+	{
+		if(local.loopdelay == "")
+			local.loopdelay_f = 0.4
+		else
+			local.loopdelay_f = abs(float(local.loopdelay))
+			
+		level.jvbot_loopdelay = local.loopdelay_f
+		setcvar "jvbot_loopdelay" local.loopdelay_f
+
+		if(local.loopdelay_f == 0)
+			local.fps = "(n/a)"
+		else if(local.loopdelay_f < 1)
+			local.fps = int(1 / local.loopdelay_f)
+		else
+			local.fps = 1.0 / local.loopdelay_f
+
+		if(local.loopdelay_f < 0.1)
+			println "WARNING[jv_mp_ai::setloopdelay]: Using very short loop delay: " local.loopdelay_f " seconds (" local.fps " fps)."
+		else if(local.loopdelay_f > 2.0)
+			println "WARNING[jv_mp_ai::setloopdelay]: Using excessive loop delay: " local.loopdelay_f " seconds (" local.fps " fps)."
+		else
+			println "INFO[jv_mp_ai::setloopdelay]: Using new loop delay: " local.loopdelay_f " seconds (" local.fps " fps)."
+	}
+end
+
+/**
+Makes sure the task variable of a bot represents a task as 
+set in the tasklist. Returns 0 if valid, -1 if otherwise.
+Internal use.
+*/
+checktaskvalidity local.task:
+	if(self.task != NIL && self.task != idle)
+	{
+		for(local.i = 1; local.i <= level.jvbot_tasks_name.size; local.i++)
+		{
+			local.postask = level.jvbot_tasks_name[local.i]
+			if(local.task == local.postask)
+				end 0
+		}
+	}
+end -1
+
+/**
+Bot specific thread that starts the needed task scripts 
+depending on the self.task variable. Internal use.
+*/
+botcontrol:
+	while(isAlive self)
+	{
+		local.valid = waitthread checktaskvalidity self.task
+		if(local.valid == -1)
+			self.task = idle
+
+		local.task = self.task
+
+		if(self.task == "idle")
+		{
+			self.cur_task_priority = 0
+			while(isAlive self && self.task == local.task)
+			{
+				waitframe
+				wait level.jvbot_loopdelay
+			}
+			// waiting for new orders
+		}
+		else
+		{	
+			local.taskscript = level.jvbot_homedir + "task_" + local.task + ".scr"
+			self waitthread local.taskscript::action
+		}
+		waitframe
+	}
+end
+
+/**
+Runs 'getpriority:' thread for all available tasks. Returns favourite 
+task, priority and all parms. Internal use.
+*/
+botgetnewtask:
+	for(local.i = 1; local.i <= level.jvbot_tasks_name.size; local.i++) 
+	{
+		local.task = level.jvbot_tasks_name[local.i]
+		local.basepriority = level.jvbot_tasks_priority[local.task]
+		local.input[local.task] = self waitthread level.jvbot_tasks_script[local.task]::getpriority
+		local.task_priority[local.task] = local.input[local.task][1] * local.basepriority
+	}
+	// find highest priority
+	local.bestscore = -1
+	for(local.i = 1; local.i <= level.jvbot_tasks_name.size; local.i++)
+	{
+		local.task = level.jvbot_tasks_name[local.i]
+		if(local.task_priority[local.task] > local.bestscore)
+		{
+			local.besttask = local.task
+			local.bestscore = local.task_priority[local.task]
+		}
+	}
+	if(local.bestscore < 0)
+		local.besttask = "idle"
+		
+	local.output[1] = local.bestscore
+	local.output[2] = local.besttask
+	for(local.i = 2; local.i <= local.input[local.besttask].size; local.i++)
+		local.output[local.i + 1] = local.input[local.besttask][local.i]
+end local.output
+
+/**
+Sets bot variables to trigger a change of tasks.
+Can be called externally although currently unsupported.
+
+array input:	internal bot task array consisting of the following elements:
+				[1] priority
+				[2] task name
+				[3] parm[1]
+				[x] parm[x-2]
+*/
+botsetnewtask local.input:
+	if(self.task != NIL && self.task != idle)
+		local.old_priority = level.jvbot_tasks_priority[self.task] * (waitthread level.jvbot_tasks_script[self.task]::evaluate self.parm 1)
+	else
+		local.old_priority = 0
+	
+	local.new_priority = local.input[1]
+	
+	if(local.new_priority > (1.5 * local.old_priority))
+	{
+		self.task = local.input[2]
+		for(local.i = 3; local.i <= local.input.size; local.i++)
+			self.parm[local.i - 2] = local.input[local.i]
+	}
+end
+
+/**
+Returns the entity with targetname local.name and #set local.set.
+
+string name: 	targetname of desired entity
+int set:		#set value of entity
+*/
+get_from_set local.name local.set:
+	local.nodes = $(local.name)
+	for(local.i = 1; local.i <= local.nodes.size; local.i++)
+	{
+		local.node = local.nodes[local.i]
+		if(local.node.set == local.set)
+		{
+			local.ok = 1
+			break
+		}
+	}
+	if(local.ok == 1)
+		end local.node
+end NULL
+
+/**
+Returns the ID of the nearest node of the given route.
+Internal use.
+*/
+getnearestid local.route:
+	for(local.id = level.route_lastid[local.route]; local.id >= 0; local.id--)
+	{
+		local.nodes = level.route[local.route][local.id]
+		if(local.nodes.size > 1)
+		{
+			local.nodenum = randomint local.nodes.size + 1
+			local.node = local.nodes[local.nodenum]
+		}
+		else
+			local.node = local.nodes
+		local.distance = vector_length(self.origin - local.node.origin)
+		if(local.shortest_distance == NIL || local.distance < local.shortest_distance)
+		{
+			local.shortest_distance = local.distance
+			local.nearestid = local.id
+		}
+	}
+end local.nearestid
+
+/**
+Orders self to go to local.location, optionally by following a route.
+During the move, self.go_to is asserted. A bot cannot start another move 
+as long as self.go_to equals '1'.
+
+entity location:		entity to walk to.
+float movedonerange:	minimum distance to destination to stop move.
+*/
+action_go_to_routed local.location local.movedonerange:
+	if(local.location == NIL)
+		println "ERROR[jv_mp_ai::action_go_to_routed]: Location is NIL, task: " self.task
+	else
+	{
+		local.task = self.task
+		if(self.go_to == 1)
+		{
+			if(level.jvbot_verbose)
+				println "INFO[jv_mp_ai::action_go_to_routed]: Bot " self " is cueued for move"
+			while(isAlive self && self.go_to == 1 && self.task == local.task)
+			{
+				// don't start another move thread
+				waitframe
+				wait level.jvbot_loopdelay
+			}
+		}
+		
+		if !(isAlive self && local.task == self.task)
+			end
+	
+		self.go_to = 1
+		if(local.location.routelist != NIL && level.routelist[local.location.routelist].size > 0)
+		{
+			local.routenum = randomint level.routelist[local.location.routelist].size + 1
+			local.route = level.routelist[local.location.routelist][local.routenum]
+		}
+		else if(local.location.route != NIL)
+			local.route = local.location.route
+		if(local.route == NIL)
+			self waitthread action_go_to local.location local.movedonerange 1
+		else
+		{
+			if(level.jvbot_verbose == 1 || level.jvbot_routeprint == 1)
+				println "INFO[jv_mp_ai::action_go_to_routed]: Bot " self " is going to follow route " local.route " to " local.location
+			local.nearestid = 1
+			while(isAlive self && self.task == local.task && local.nearestid > 0)
+			{
+				local.nearestid = self waitthread getnearestid local.route
+				if(local.nearestid > 1) //test
+				{
+					local.id = local.nearestid - 1
+					local.nodes = level.route[local.route][local.id]
+					if(local.nodes.size > 1)
+					{
+						local.nodenum = randomint local.nodes.size + 1
+						local.node = local.nodes[local.nodenum]
+					}
+					else
+						local.node = local.nodes
+					local.range = 128
+				}
+				else
+				{
+					local.node = local.location
+					local.range = local.movedonerange
+				}
+				self thread action_go_to local.node local.range 1
+				local.move_thread = parm.previousthread
+				local.newnearestid = local.nearestid
+				local.aborted = 0
+				while(local.move_thread && local.newnearestid == local.nearestid)
+				{
+					wait level.jvbot_loopdelay
+					waitframe
+					if(isAlive self)
+						local.newnearestid = self waitthread getnearestid local.route
+					else 
+						break
+				}
+				if(local.move_thread)
+				{
+					local.move_thread.terminate = 1
+					while(local.move_thread)
+						waitframe
+					local.aborted = 1
+				}
+				if(isAlive self && local.aborted == 0 && self.task == local.task && local.node.action != NIL)
+				{
+					local.script = level.jvbot_homedir + "special_" + local.node.action + ".scr"
+					self waitthread local.script::main local.node.actionset
+				}
+			}
+		}
+		if(isalive self)
+			self.go_to = 0
+	}
+end
+
+/**
+Goes to the given destination without using routes.
+
+entity location:		location to run to.
+float movedonerange:	distance from destination to stop move.
+boolean no_go_to:		if '1', self.go_to will not be asserted.
+*/
+action_go_to local.location local.movedonerange local.no_go_to:
+	if(local.movedonerange == NIL)
+		local.movedonerange = 128
+	
+	local.task = self.task // to check whether it has changed
+	local.parm[1] = self.parm[1]
+		
+	if(local.no_go_to == NIL)
+	{
+		if(self.go_to == 1)
+		{
+			if(level.jvbot_verbose)
+				println "INFO[jv_mp_ai::action_go_to]: A bot is cueued in move thread"
+			while(isAlive self && self.go_to == 1 && self.task == local.task && local.terminate != 1)
+			{
+				// don't start another move thread
+				waitframe
+				wait level.jvbot_loopdelay
+			}
+		}
+	}
+	
+	if (!(isAlive self && self.task == local.task) || local.terminate == 1)
+		end
+		
+	local.leash = self.leash
+	local.mindist = self.mindist
+	
+	if(local.no_go_to == NIL)
+		self.go_to = 1
+		
+	while(isAlive self && local.terminate != 1 && local.location && self.task == local.task && self.parm[1] == local.parm[1])
+	{
+		local.starthealth = self.health
+		
+		self.mindist = 0
+		self.leash = 0
+		
+		self runto local.location
+		waitframe
+		wait level.jvbot_loopdelay
+		
+		if(isAlive self)
+		{
+			// am I at my destination?
+			if(local.location && vector_within self.origin local.location.origin local.movedonerange)
+			{
+				local.reach = 1
+				break // out of while
+			}
+			
+			local.healthloss = local.starthealth - self.health
+			if(local.healthloss > 0 && self.fact != NIL && self.fact && self.fact.attacker != NIL && self.fact.attacker)
+			{
+				// must have experienced pain, turnto attacker
+				self runto NULL
+				if(self.fact.attacker.dmteam != self.dmteam)
+				{
+					self.mindist = 128
+					self.leash = 512
+					self waitexec global/stand.scr
+					wait 0.5
+					self runto self.fact.attacker
+					wait 2
+					self runto NULL
+					if(isAlive self)
+					{
+						self.mindist = 0
+						self.leash = 0
+					}
+				}
+			}
+		}
+	}
+	if(isAlive self)
+	{
+		self runto NULL
+		self.leash = local.leash
+		self.mindist = local.mindist
+
+		if(local.no_go_to == NIL)
+			self.go_to = 0
+	}
+end
+
+/**
+Says the given sound, which is determined by the last two 
+characters from the corresponding alias in the uberdialog.scr file.
+
+string sound:	suffix of sound alias to use.
+*/
+say local.sound:
+	// 3[5] allied voicetypes (airborne, [manon], [sas], pilot, army)
+	// 5 axis voicetypes (axis1, axis2, axis3, axis4, axis5)
+	if(self.dmteam == "allies")
+	{
+		local.voicenum = randomint 3 + 1
+		switch(local.voicenum)
+		{
+			case 1:
+				local.voice = "airborne"
+				break
+			case 2:
+				local.voice = "pilot"
+				break
+			default:
+				local.voice = "army"
+		}
+		local.prefix = "allied_"
+	}
+	else
+	{
+		local.voicenum = randomint 5 + 1
+		local.voice = "axis" + local.voicenum
+		local.prefix = "axis_"
+	}
+	local.alias = local.prefix + local.voice + "_" + local.sound
+	self playsound local.alias // no animations available
+end

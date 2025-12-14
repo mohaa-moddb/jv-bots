@@ -1,0 +1,127 @@
+/**
+Multiplayer Bot script for MoH:AA obj
+=============================================
+by jv_map
+version 1.0
+---------------------------------------------
+Copyright (c) 2002-2003 Jeroen Vrijkorte
+All rights reserved.
+---------------------------------------------
+Distribution is allowed provided all subsequent 
+conditions are met:
+
+1. Commercial use is prohibited.
+
+2. The above copyright notice and this permission notice shall
+be included in all copies or substantial portions of the file.
+
+3. If you have made modifications to the original files you must
+cause the modified files to carry prominent notices stating
+that you changed the files.
+
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, 
+SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE 
+SOFTWARE OR DOCUMENTATION.
+---------------------------------------------
+jv_map@planetmedalofhonor.com
+http://www.quake3stuff.com/freebrief
+---------------------------------------------
+*/
+
+/**
+---------------------------------------------
+Ladder Climbing
+
+Can only be used on routes.
+---------------------------------------------
+*/
+
+/**
+Climbs the ladder with #set local.set
+
+int set: #set value of #actionset and corresponding ladder.
+*/
+main local.set:
+	self.enableEnemy = 0
+	local.bottomnode = waitthread level.jvbot_main_script::get_from_set ladderbottom local.set
+	local.topnode = waitthread level.jvbot_main_script::get_from_set laddertop local.set
+	if(vector_closer local.bottomnode.origin local.topnode.origin self.origin)
+		local.dir = up
+	else
+		local.dir = down
+	self waitthread ladder_climb local.dir local.bottomnode local.topnode
+	self.enableEnemy = 1
+end
+
+/**
+Climbs the ladder in the given direction using the given nodes.
+Startnode needs to have the correct angles.
+
+string dir:			'up' for climbing upwards, 'down' for sliding down.
+entity bottomnode:	script_origin marking the bottom of the ladder.
+entity topnode:		script_origin marking the top of the ladder.
+*/
+ladder_climb local.dir local.bottomnode local.topnode:
+	self holster
+	
+	if(local.dir == up)
+	{
+		local.startnode = local.bottomnode
+		local.endnode = local.topnode
+		local.dirnum = 1
+	}
+	else
+	{
+		local.startnode = local.topnode
+		local.endnode = local.bottomnode
+		local.dirnum = -1
+	}
+		
+	self runto local.startnode
+	self waittill movedone
+	self runto NULL
+	wait 0.1
+	
+	if !(isAlive self)
+		end
+		
+	self.origin = local.startnode.origin
+	self.angles = local.startnode.angles
+	self anim_noclip ("ladder_" + local.dir + "_geton")
+	self waittill animdone
+	
+	while(isAlive self && vector_closer self.origin (local.endnode.origin + vector_scale (0 0 64) ( -1 * local.dirnum)) local.startnode.origin)
+	{
+		if(local.hand == left)
+			local.hand = right
+		else
+			local.hand = left
+		self anim_noclip ("ladder_" + local.dir + "_" + local.hand + "hand")
+		//self waittill animdone
+		wait 0.15 // doesn't respond to pain
+		// correct attachment
+		local.tmp_origin = self.origin
+		local.tmp_origin[0] = local.startnode.origin[0]
+		local.tmp_origin[1] = local.startnode.origin[1]
+		self.angles = local.startnode.angles
+		self.origin = local.tmp_origin
+	}
+	
+	if !(isAlive self)
+	{
+		self.origin = self.origin - self.forwardvector * 32 // fall backwards down the ladder
+		end
+	}
+	
+	self.origin = local.endnode.origin
+	self anim ("ladder_" + local.dir + "_getoff")
+	self waittill animdone
+	
+	if !(isAlive self)
+	{
+		self.origin = self.origin - self.forwardvector * 32 // fall backwards down the ladder
+		end
+	}
+		
+	self unholster
+end
