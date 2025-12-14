@@ -451,8 +451,36 @@ camp local.bombnode:
 							local.leash = self.leash
 							self.mindist = 0
 							self.leash = 0
-							self runto local.newnode
-							self waittill movedone
+							// force move
+							local.time = level.time
+							local.i = 0
+							while(isAlive self)
+							{
+								self runto local.newnode
+								self waittill movedone
+								if (vector_within self.origin local.newnode.origin 64)
+									break
+								else if (level.time - local.time >= 7)
+								{
+									// brace
+									wait (randomfloat 2)
+									self exec global/crouch.scr
+									break
+								}
+								else
+								{
+									local.i++
+									local.badnodes[local.i] = local.newnode
+									local.newnode = self waitthread getsafecampnode local.bomb local.badnodes
+									if !(local.newnode)
+									{
+										// brace
+										wait (randomfloat 2)
+										self exec global/crouch.scr
+										break
+									}
+								}
+							}
 							if(isAlive self)
 							{
 								self.leash = local.leash
@@ -462,6 +490,7 @@ camp local.bombnode:
 									wait 0.2
 								if(isAlive self)
 								{
+									self exec global/stand.scr
 									self.task = idle
 									self.notask = 0
 								}
@@ -471,10 +500,13 @@ camp local.bombnode:
 						{
 							// self pray :)
 							self.notask = 1
+							wait (randomfloat 2)
+							self exec global/crouch.scr
 							while(local.bomb.ticking)
 								wait 0.2
 							if(isAlive self)
 							{
+								self exec global/stand.scr
 								self.task = idle
 								self.notask = 0
 							}
@@ -495,19 +527,27 @@ campdanger local.bomb:
 	// check if the guy is within explosion radius of a critical bomb
 	if(local.bomb.critical)
 	{
-		if(vector_within self.origin local.bomb.origin local.bomb.explosion_radius && sighttrace (self.origin + (0 0 48)) local.bomb.origin 2)
+		if(vector_within self.origin local.bomb.origin local.bomb.explosion_radius)
 			end 1	
 	}
 end 0
 
-getsafecampnode local.bomb:
+isinarray local.array local.element:
+	for(local.i = 1; local.i <= local.array.size; local.i++)
+	{
+		if(local.array[local.i] == local.element)
+			end 1
+	}
+end 0
+
+getsafecampnode local.bomb local.except_array:
 	// returns the nearest campnode outside the bomb's radius
 	local.num = 0
 	local.set = local.bomb.campset
 	for(local.i = 1; local.i <= $bombcamp.size; local.i++)
 	{
 		local.node = $bombcamp[local.i]
-		if(local.node.set == local.set)
+		if(local.node.set == local.set && !(waitthread isinarray local.except_array local.node))
 		{
 			local.num++
 			local.setnode[local.num] = local.node
@@ -518,7 +558,7 @@ getsafecampnode local.bomb:
 	for(local.i = 1; local.i <= local.num; local.i++)
 	{
 		local.node = local.setnode[local.i]
-		if (!vector_within local.node.origin local.bomb.origin local.bomb.explosion_radius || !(sighttrace (local.node.origin  + (0 0 48)) local.bomb.origin 2))
+		if (!vector_within local.node.origin local.bomb.origin local.bomb.explosion_radius) //|| !(sighttrace (local.node.origin  + (0 0 48)) local.bomb.origin 2))
 		{
 			local.j++	
 			local.safenode[local.j] = local.node

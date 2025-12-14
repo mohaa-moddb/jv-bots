@@ -52,7 +52,7 @@ enable local.verbose local.debug_colors local.debug_routes local.debug_mph:
 	// sets cvars and level vars
 	// adds libraries
 	// eventually starts script
-	level.jvbot_version = "1.1"
+	level.jvbot_version = "1.1-update#1"
 
 	setcvar "jvbot_running" "0"
 	setcvar "jvbot_version" level.jvbot_version
@@ -891,7 +891,7 @@ action_go_to_routed local.location local.movedonerange:
 		
 		if !(isAlive self && local.task == self.task)
 			end
-	
+		
 		self.go_to = 1
 		if(local.location.routelist != NIL && level.routelist[local.location.routelist].size > 0)
 		{
@@ -907,9 +907,14 @@ action_go_to_routed local.location local.movedonerange:
 			if(level.jvbot_verbose == 1 || level.jvbot_routeprint == 1)
 				println "INFO[jv_mp_ai::action_go_to_routed]: Bot " self " is going to follow route " local.route " to " local.location
 			local.nearestid = 1
+			local.aborted = 0
 			while(isAlive self && self.task == local.task && local.nearestid > 0)
 			{
-				local.nearestid = self waitthread getnearestid local.route
+				if(local.aborted)
+					local.nearestid = local.newnearestid
+				else
+					local.nearestid = self waitthread getnearestid local.route
+
 				if(local.nearestid > 1) //test
 				{
 					local.id = local.nearestid - 1
@@ -931,8 +936,8 @@ action_go_to_routed local.location local.movedonerange:
 				self thread action_go_to local.node local.range 1
 				local.move_thread = parm.previousthread
 				local.newnearestid = local.nearestid
-				local.aborted = 0
-				while(local.move_thread && local.newnearestid == local.nearestid)
+				
+				while(local.move_thread && local.newnearestid >= local.nearestid)
 				{
 					wait level.jvbot_loopdelay
 					waitframe
